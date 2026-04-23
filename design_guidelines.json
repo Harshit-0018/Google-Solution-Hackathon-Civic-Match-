@@ -1,0 +1,94 @@
+{
+  "theme": "light",
+  "archetype": "Archetype 4: Swiss & High-Contrast",
+  "design_philosophy": "Color is function. 95% of the UI is monochrome to let the data (maps, urgency, scores) be the hero. Sharp, grid-based layouts to convey authority, trust, and smart resource allocation.",
+  "colors": {
+    "background": "#FAFAFA",
+    "surface": "#FFFFFF",
+    "text_primary": "#111111",
+    "text_secondary": "#5C5C5C",
+    "border": "#E5E5E5",
+    "primary": "#002FA7",
+    "primary_hover": "#001D6C",
+    "urgency_high": "#FF2A2A",
+    "urgency_medium": "#FFC000",
+    "urgency_low": "#00C05A",
+    "score_skill": "#002FA7",
+    "score_proximity": "#00C05A",
+    "score_availability": "#FFC000",
+    "score_impact": "#FF2A2A"
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "mono": "JetBrains Mono"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter leading-none",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight leading-tight",
+      "h3": "text-xl sm:text-2xl tracking-tight",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base leading-relaxed",
+      "label": "text-xs tracking-[0.2em] uppercase font-mono"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous Spacing for marketing, Dense Control Room for dashboards.",
+    "containers": "Use padding p-6 or p-8 inside bordered containers.",
+    "dashboards": "Control Room Grid (grid-cols-1 md:grid-cols-3 lg:grid-cols-4) with tight gaps (gap-4 or gap-6). Use grid borders to expose the skeleton.",
+    "landing_page": "Tetris Grid with wide gaps (gap-8 to gap-12). Aggressive asymmetry.",
+    "border_radius": "Rounded-none or rounded-sm (max 4px) to maintain the rigid Swiss look."
+  },
+  "components": {
+    "buttons": "Flat, sharp edges. Primary: bg-[#002FA7] text-white hover:-translate-y-1 transition-transform. Secondary: border border-[#111111] bg-transparent hover:bg-[#111111] hover:text-white.",
+    "cards": "Flat background (#FFFFFF), 1px solid border (#E5E5E5), no soft drop shadows. On hover, use a harsh offset shadow (shadow-[4px_4px_0px_#111111]) for tactile feedback.",
+    "badges": "Font-mono, uppercase, text-xs. 1px solid border. Color matches the urgency or category.",
+    "progress_bars": "Sharp edges (rounded-none). Background #E5E5E5, fill uses the score_* functional colors.",
+    "maps": "Use light/silver map styles. Overlay data with high-contrast heatmaps (Signal Red to Warning Yellow) for instant urgency recognition."
+  },
+  "motion_and_interactions": {
+    "hover": "Harsh, immediate offset shadows or background inversions. No muddy/slow fades.",
+    "transitions": "Fast, mechanical ease (0.15s).",
+    "data_viz": "Staggered entrance animations for bento grid cards. Progress bars fill sequentially."
+  },
+  "media": {
+    "icons": "lucide-react (already installed). Use sharp, consistent stroke widths (1.5px or 2px).",
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/5c024b8d-e008-44a4-b48f-072db2e06663/images/bb29e714e27861c8be643a9fea7331cef839d96ac59c3888deb007b813f4c0eb.png",
+        "description": "Abstract data visualization map showing network nodes. Use as a subtle background behind the landing page hero section."
+      },
+      {
+        "category": "concept_art",
+        "url": "https://static.prod-images.emergentagent.com/jobs/5c024b8d-e008-44a4-b48f-072db2e06663/images/36a3f19e7bcf1d0523f74155c75364b3f1b4fc8573f631d7e75cbca3e8c8df13.png",
+        "description": "Hands holding a digital node. Use in the 'AI Matching' or 'Smart Allocation' feature section."
+      },
+      {
+        "category": "community_impact_1",
+        "url": "https://images.pexels.com/photos/6646926/pexels-photo-6646926.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Volunteers handing out donations. Use in the NGO or Volunteer portal landing/about sections."
+      },
+      {
+        "category": "community_impact_2",
+        "url": "https://images.pexels.com/photos/6591433/pexels-photo-6591433.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Group of volunteers. Use for testimonials or community showcase."
+      }
+    ]
+  },
+  "accessibility_and_testing": {
+    "contrast": "Ensure minimum 4.5:1 ratio for text. The dark #111111 on #FAFAFA easily passes.",
+    "testing_attributes": "All interactive elements MUST include a data-testid attribute in kebab-case (e.g., 'ngo-post-task-button', 'volunteer-accept-match')."
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the color palette. Do not add any new colors. Rely on layout, grid borders, and spacing for visual hierarchy instead of color overload.",
+    "Implement the 'Control Room' grid layout for the NGO, Volunteer, and Admin dashboards. Every card must have a 1px border. No soft shadows.",
+    "Use Shadcn components but strip out their default rounded corners (set to rounded-none or rounded-sm) to match the Swiss/Brutalist aesthetic.",
+    "For the Heatmap, ensure the map tiles are light/monochrome so the high-contrast red/yellow hot spots immediately draw the eye.",
+    "Ensure the AI Matching score breakdown uses 4 distinct progress bars with the assigned functional colors (Blue, Green, Yellow, Red) for clarity.",
+    "Do not use placeholder image URLs. Only use the media URLs provided in this JSON.",
+    "Ensure 'Cabinet Grotesk' is applied to all H1-H4 headings and 'IBM Plex Sans' to body text.",
+    "For .js files, define functional React components. The design rules apply purely to Tailwind utility classes."
+  ]
+}
