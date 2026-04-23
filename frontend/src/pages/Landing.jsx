@@ -26,6 +26,13 @@ export default function LandingPage() {
             </span>
           </Link>
           <div className="flex items-center gap-3">
+            <Link
+              to="/impact"
+              data-testid="nav-impact"
+              className="hidden md:inline-flex label-mono border border-[#E5E5E5] px-3 py-1.5 hover:border-[#111] transition-colors"
+            >
+              PUBLIC IMPACT ↗
+            </Link>
             {user ? (
               <Link
                 to={user.role === "admin" ? "/admin" : user.role === "ngo" ? "/ngo" : user.role === "volunteer" ? "/volunteer" : "/onboarding"}

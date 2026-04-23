@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 2 testing complete for SRA. All 39 pytest cases PASS: 27 regression (test_sra_api.py) + 12 new-feature (test_sra_new_features.py) covering (a) public /api/impact/public unauth, (b) Gemini semantic_skills persistence + usage in matching, (c) NGO ownership enforcement on /api/match/run (403 for non-owner NGO, 200 for admin), (d) notifications CRUD end-to-end (match_created on run, match_accepted on respond, task_completed on complete, single read, mark-all-read, 401 unauth). Frontend verified via Playwright: /impact public page renders stats/heatmap/leaderboard/categories without auth; NotificationsBell renders on volunteer & NGO portals with unread badge (seen '2'), dropdown opens, mark-all-read wired; NGO portal shows TEST_ tasks incl. 'Semantic First Aid Camp'. Google Maps fallback to Leaflet confirmed (REACT_APP_GOOGLE_MAPS_API_KEY empty; Leaflet tiles visible on /impact, /volunteer, /ngo).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/tasks", "issue": "Gemini semantic_skills expansion is synchronous inside the request (awaited via asyncio.gather with translation under 25-35s timeout). Task creation latency observed ~4-10s on healthy path. Consider moving semantic expansion + translation to a background job so the POST returns immediately with status='pending_enrichment'."},
+      {"endpoint": "GET /api/impact/public", "issue": "No caching; every hit performs 6 counts + 3 aggregations + 2 finds. For a public, unauth endpoint this is a DoS vector. Add a 60s in-memory or Mongo materialized cache."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Public /impact", "issues": ["Leaflet attribution/tile credit not visible in viewport (may be cropped). Verify OSM attribution remains visible per Leaflet license terms."]},
+      {"screen": "NotificationsBell dropdown", "issues": ["Dropdown positioned partially off-canvas on narrow viewports in some pages (observed during volunteer portal test). Consider right-aligning with max-width on smaller screens."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sra_api.py",
+    "/app/backend/tests/test_sra_new_features.py",
+    "/app/test_reports/pytest/regression.xml",
+    "/app/test_reports/pytest/new_features.xml"
+  ],
+  "action_items": [
+    "(Optional perf) Cache /api/impact/public for 30-60s to protect the public endpoint.",
+    "(Optional perf) Move Gemini semantic_skills + translation to background task so POST /api/tasks returns fast; frontend can poll or use websocket.",
+    "(Optional UX) Right-align NotificationsBell dropdown on <768px and ensure Leaflet OSM attribution remains visible."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~1354 lines — continues to exceed 700-line guideline. Strongly recommend splitting into routers: auth.py, tasks.py, matching.py, notifications.py, impact.py, rewards.py, admin.py.",
+    "create_notification writes documents inline without a Pydantic model — response shape not validated. Define NotificationOut and use response_model=.",
+    "Notification polling interval in NotificationsBell is client-driven — every volunteer hammers the API every N seconds. Consider Server-Sent Events or at least exponential back-off when unread==0.",
+    "run_matching ownership check lives in the handler; consider a FastAPI dependency (`ensure_task_owner`) to apply uniformly on respond/complete/delete in future.",
+    "Public impact heatmap returns raw lat/lng of OPEN tasks — low PII risk but if a task location is a survivor's home it leaks. Rounding to ~2 decimal places (≈1km grid) would be safer."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sra_new_features.py"
+  ],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "100% for tested flows (public impact, bell on vol+ngo, mark-all-read, NGO dashboard)"},
+  "test_credentials": "Regenerated via mongosh. Current live tokens: ADMIN=test_admin_1776962724942 VOL=test_vol_1776962922653 NGO=test_ngo_1776962922653 (user_admin_test / user_vol_test / user_ngo_test, ngo_test_123). seed-demo only wipes demo users ending @demo.sra now — test users survive across runs.",
+  "seed_data_creation": "Demo data already present from iteration 1. This iteration added 3 more TEST_-prefixed tasks (Semantic First Aid Camp, Notifications Teaching, etc.). Notifications were generated for user_vol_test and user_ngo_test during matching/respond/complete.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Two pytest files now cover the backend: test_sra_api.py (27 regression) and test_sra_new_features.py (12 new-feature). Both are self-bootstrapping — autouse fixture re-upserts vol+ngo test users. Run with env ADMIN_TOKEN/VOL_TOKEN/NGO_TOKEN/REACT_APP_BACKEND_URL. Playwright cookie flow for /volunteer and /ngo works as documented in /app/auth_testing.md. /impact is public (no auth). Gemini semantic_skills field always present on new tasks (may be [] if Gemini rate-limited). If notifications test flakes due to matcher not picking user_vol_test, it self-skips.",
+  "rca of the issue": "No blockers found. Minor observation: seed-demo in iteration 1 wiped all volunteer/ngo users; iteration 2 confirms the fix — now only @demo.sra emails are wiped and test users survive."
+}

@@ -292,6 +292,21 @@ function TaskDetail() {
           </div>
           <h1 className="font-heading font-black text-4xl tracking-tighter mb-2">{task.title}</h1>
           <p className="text-[#5C5C5C] max-w-2xl">{task.description}</p>
+          {task.semantic_skills?.length > 0 && (
+            <div className="mt-3">
+              <div className="label-mono text-[#002FA7] mb-1.5 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 bg-[#002FA7]" />
+                GEMINI-EXPANDED SEMANTIC SKILLS
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {task.semantic_skills.slice(0, 10).map((s) => (
+                  <span key={s} className="text-[11px] font-mono px-2 py-0.5 border border-dashed border-[#002FA7] text-[#002FA7]">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <button data-testid="run-matching-btn" onClick={runMatch} disabled={running}
           className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2">

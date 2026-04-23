@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { LogOut, Menu, X } from "lucide-react";
 import { useState } from "react";
+import NotificationsBell from "./NotificationsBell";
 
 export default function Layout({ nav = [], children, portalLabel = "" }) {
   const { user, logout } = useAuth();
@@ -48,6 +49,7 @@ export default function Layout({ nav = [], children, portalLabel = "" }) {
           <div className="flex items-center gap-3">
             {user && (
               <>
+                <NotificationsBell />
                 <div className="hidden md:flex items-center gap-2">
                   {user.picture ? (
                     <img src={user.picture} alt={user.name} className="w-8 h-8 border border-[#E5E5E5]" />

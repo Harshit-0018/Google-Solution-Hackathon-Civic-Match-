@@ -160,8 +160,8 @@ def normalize_tokens(items: List[str]):
     return out
 
 
-def skill_similarity(required: List[str], volunteer: List[str]) -> float:
-    """Jaccard-like similarity + exact-match bonus."""
+def skill_similarity(required: List[str], volunteer: List[str], semantic: Optional[List[str]] = None) -> float:
+    """Jaccard-like similarity + exact-match bonus + semantic expansion boost."""
     r = normalize_tokens(required)
     v = normalize_tokens(volunteer)
     if not r:
@@ -172,7 +172,16 @@ def skill_similarity(required: List[str], volunteer: List[str]) -> float:
     union = r | v
     jaccard = len(inter) / len(union) if union else 0.0
     coverage = len(inter) / len(r)  # how many required are covered
-    return round(min(1.0, 0.4 * jaccard + 0.6 * coverage), 4)
+    base = 0.4 * jaccard + 0.6 * coverage
+
+    # Semantic boost: check volunteer skills against Gemini-expanded semantic_skills
+    semantic_boost = 0.0
+    if semantic:
+        s = normalize_tokens(semantic)
+        sem_inter = (s - r) & v  # matches that came only from semantic expansion
+        if sem_inter:
+            semantic_boost = min(0.25, 0.08 * len(sem_inter))
+    return round(min(1.0, base + semantic_boost), 4)
 
 
 def availability_score(task: dict, volunteer: dict) -> float:
@@ -203,7 +212,11 @@ W_SKILL, W_PROX, W_AVAIL, W_IMPACT = 0.40, 0.30, 0.20, 0.10
 
 
 async def compute_match_score(task: dict, volunteer: dict) -> dict:
-    s_skill = skill_similarity(task.get('required_skills', []), volunteer.get('skills', []))
+    s_skill = skill_similarity(
+        task.get('required_skills', []),
+        volunteer.get('skills', []),
+        semantic=task.get('semantic_skills', []),
+    )
     dist = haversine_km(task.get('location_lat'), task.get('location_lng'),
                         volunteer.get('location_lat'), volunteer.get('location_lng'))
     s_prox = round(1.0 / (1.0 + dist / 10.0), 4)
@@ -551,6 +564,53 @@ async def gemini_translate(text: str) -> Dict[str, str]:
     return out
 
 
+async def gemini_expand_skills(required_skills: List[str], description: str = "") -> List[str]:
+    """Use Gemini to expand required skills with semantic synonyms/related skills.
+    Returns a list of lowercase expanded skill terms (excluding originals)."""
+    if not EMERGENT_LLM_KEY or not required_skills:
+        return []
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"expand_{uuid.uuid4().hex[:8]}",
+            system_message=(
+                "You are a skill taxonomy expert for a volunteer-matching platform. "
+                "Given a list of required skills for a community task, output a comma-separated "
+                "list of 8-12 closely related/synonym skills that a volunteer might list on their profile "
+                "and still be a good match. Output ONLY the comma-separated list, lowercase, no numbering, no explanation."
+            )
+        ).with_model("gemini", "gemini-2.5-flash")
+        prompt = f"REQUIRED SKILLS: {', '.join(required_skills)}"
+        if description:
+            prompt += f"\nTASK CONTEXT: {description[:300]}"
+        prompt += "\n\nOutput related skill terms now:"
+        resp = await chat.send_message(UserMessage(text=prompt))
+        raw = (resp or "").strip()
+        items = [s.strip().lower() for s in raw.replace("\n", ",").split(",") if s.strip()]
+        # exclude exact originals
+        originals = {s.lower() for s in required_skills}
+        expanded = [s for s in items if s not in originals and len(s) > 1 and len(s) < 40]
+        return expanded[:15]
+    except Exception as e:
+        logger.warning(f"Gemini skill expansion failed: {e}")
+        return []
+
+
+async def create_notification(user_id: str, kind: str, title: str, body: str, link: str = "", meta: dict = None):
+    await db.notifications.insert_one({
+        "notification_id": f"notif_{uuid.uuid4().hex[:12]}",
+        "user_id": user_id,
+        "kind": kind,
+        "title": title,
+        "body": body,
+        "link": link,
+        "meta": meta or {},
+        "read": False,
+        "created_at": now_utc().isoformat(),
+    })
+
+
 @api.post("/tasks")
 async def create_task(body: TaskCreate, request: Request):
     user = await require_role(request, ["ngo", "admin"])
@@ -565,12 +625,24 @@ async def create_task(body: TaskCreate, request: Request):
     # urgency score: urgency * recency factor (new = 1)
     urgency_score = round(body.urgency * 1.0, 2)
 
-    # translate async but don't block too long
+    # Run Gemini translation + skill expansion in parallel (bounded)
     translations = {"en": body.description}
+    semantic_skills: List[str] = []
     try:
-        translations = await asyncio.wait_for(gemini_translate(body.description), timeout=25.0)
+        t_res, s_res = await asyncio.wait_for(
+            asyncio.gather(
+                gemini_translate(body.description),
+                gemini_expand_skills(body.required_skills, body.description),
+                return_exceptions=True,
+            ),
+            timeout=30.0,
+        )
+        if not isinstance(t_res, Exception) and t_res:
+            translations = t_res
+        if not isinstance(s_res, Exception) and s_res:
+            semantic_skills = s_res
     except asyncio.TimeoutError:
-        logger.warning("Translation timed out; storing English only")
+        logger.warning("Gemini translation/expansion timed out")
 
     doc = {
         "task_id": task_id,
@@ -583,6 +655,7 @@ async def create_task(body: TaskCreate, request: Request):
         "urgency_score": urgency_score,
         "category": body.category,
         "required_skills": body.required_skills,
+        "semantic_skills": semantic_skills,
         "required_slots": body.required_slots or ["morning", "afternoon", "evening"],
         "location_lat": body.location_lat,
         "location_lng": body.location_lng,
@@ -663,10 +736,13 @@ async def apply_task(task_id: str, request: Request):
 
 @api.post("/match/run/{task_id}")
 async def run_matching(task_id: str, request: Request):
-    admin = await require_role(request, ["admin", "ngo"])
+    actor = await require_role(request, ["admin", "ngo"])
     task = await db.tasks.find_one({"task_id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(404, "Task not found")
+    # NGO can only run matching on their own tasks
+    if actor.get('role') == 'ngo' and task.get('ngo_id') != actor.get('ngo_id'):
+        raise HTTPException(403, "You can only run matching on your own tasks")
 
     cursor = db.users.find({"role": "volunteer", "verified": True}, {"_id": 0})
     volunteers = [v async for v in cursor]
@@ -697,13 +773,22 @@ async def run_matching(task_id: str, request: Request):
             "score_impact": s['score_impact'],
             "distance_km": s['distance_km'],
             "status": "pending",
-            "matched_by": admin['user_id'],
+            "matched_by": actor['user_id'],
             "created_at": now_utc().isoformat(),
         }
         await db.matches.insert_one(match_doc)
+        # In-app notification for matched volunteer
+        await create_notification(
+            user_id=s['volunteer_id'],
+            kind="match_created",
+            title="New task match",
+            body=f"You have been matched to \"{task['title']}\" by {task.get('ngo_name', 'an NGO')}",
+            link="/volunteer/matches",
+            meta={"match_id": match_doc["match_id"], "task_id": task_id, "score": s['score_total']},
+        )
 
     await db.tasks.update_one({"task_id": task_id}, {"$set": {"status": "matching"}})
-    await audit_log("run_matching", admin, task_id, "tasks", {"candidates": len(top_n)})
+    await audit_log("run_matching", actor, task_id, "tasks", {"candidates": len(top_n)})
     out = await db.matches.find({"task_id": task_id}, {"_id": 0}).sort("score_total", -1).to_list(100)
     return {"task_id": task_id, "matches": out, "all_scored": scores}
 
@@ -749,6 +834,18 @@ async def respond_match(match_id: str, body: MatchResponse, request: Request):
     }})
     if body.status == "accepted":
         await db.tasks.update_one({"task_id": match['task_id']}, {"$inc": {"volunteers_matched": 1}, "$set": {"status": "active"}})
+    # Notify NGO admin
+    ngo = await db.ngos.find_one({"ngo_id": match.get('ngo_id')}, {"_id": 0})
+    if ngo and ngo.get("admin_uid"):
+        verb = "accepted" if body.status == "accepted" else "declined"
+        await create_notification(
+            user_id=ngo["admin_uid"],
+            kind=f"match_{body.status}",
+            title=f"Volunteer {verb}",
+            body=f"{user['name']} {verb} \"{match.get('task_title', 'your task')}\"",
+            link=f"/ngo/tasks/{match['task_id']}",
+            meta={"match_id": match_id, "task_id": match['task_id']},
+        )
     await audit_log(f"match_{body.status}", user, match_id, "matches")
     return {"ok": True}
 
@@ -793,6 +890,15 @@ async def complete_match(match_id: str, request: Request):
     await db.users.update_one({"user_id": match['volunteer_id']}, {"$set": {"badges": list(badges)}})
 
     await audit_log("complete_match", user, match_id, "matches", {"points": points + milestone_bonus})
+    # Notify volunteer about points & completion
+    await create_notification(
+        user_id=match['volunteer_id'],
+        kind="task_completed",
+        title=f"+{points + milestone_bonus} points earned!",
+        body=f"Task \"{task['title'] if task else ''}\" marked complete. Tap to view rewards.",
+        link="/volunteer/rewards",
+        meta={"match_id": match_id, "points": points + milestone_bonus},
+    )
     return {"ok": True, "points_awarded": points + milestone_bonus}
 
 
@@ -1115,6 +1221,94 @@ async def seed_demo(request: Request):
     return {"ok": True, "ngos": 3, "volunteers": 15, "tasks": 10, "catalog": len(CATALOG_SEED)}
 
 
+# ================== NOTIFICATIONS ==================
+
+@api.get("/notifications")
+async def list_notifications(request: Request, limit: int = Query(30, le=100)):
+    user = await require_user(request)
+    cursor = db.notifications.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    items = [d async for d in cursor]
+    unread = sum(1 for n in items if not n.get("read"))
+    return {"items": items, "unread": unread}
+
+
+@api.put("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, request: Request):
+    user = await require_user(request)
+    await db.notifications.update_one(
+        {"notification_id": notification_id, "user_id": user["user_id"]},
+        {"$set": {"read": True}},
+    )
+    return {"ok": True}
+
+
+@api.put("/notifications/read-all")
+async def mark_all_read(request: Request):
+    user = await require_user(request)
+    await db.notifications.update_many({"user_id": user["user_id"], "read": False}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+# ================== PUBLIC IMPACT ==================
+
+@api.get("/impact/public")
+async def public_impact():
+    """Public (unauthenticated) impact dashboard stats + recent completed tasks."""
+    ngos_total = await db.ngos.count_documents({"verified": True})
+    volunteers = await db.users.count_documents({"role": "volunteer"})
+    tasks_total = await db.tasks.count_documents({})
+    tasks_completed = await db.tasks.count_documents({"status": "completed"})
+    tasks_active = await db.tasks.count_documents({"status": {"$in": ["active", "matching"]}})
+    matches_total = await db.matches.count_documents({})
+    matches_completed = await db.matches.count_documents({"status": "completed"})
+    total_points_agg = await db.users.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$total_points"}}}
+    ]).to_list(1)
+    total_points = total_points_agg[0]["total"] if total_points_agg else 0
+
+    # Top 5 volunteers
+    leaders = await db.users.find(
+        {"role": "volunteer"},
+        {"_id": 0, "name": 1, "total_points": 1, "badges": 1, "location_name": 1}
+    ).sort("total_points", -1).limit(5).to_list(5)
+
+    # Recent completed tasks (hide PII)
+    recent_completed = await db.tasks.find(
+        {"status": "completed"},
+        {"_id": 0, "title": 1, "category": 1, "urgency": 1, "location_name": 1, "ngo_name": 1, "volunteers_required": 1, "volunteers_matched": 1}
+    ).sort("created_at", -1).limit(8).to_list(8)
+
+    # Heatmap points from open/active tasks only
+    heat = await db.tasks.find(
+        {"status": {"$in": ["open", "matching", "active"]}},
+        {"_id": 0, "location_lat": 1, "location_lng": 1, "urgency": 1, "category": 1, "title": 1, "location_name": 1}
+    ).limit(200).to_list(200)
+
+    # category distribution
+    categories_cursor = db.tasks.aggregate([
+        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ])
+    categories = [{"category": c["_id"], "count": c["count"]} async for c in categories_cursor]
+
+    return {
+        "stats": {
+            "ngos": ngos_total,
+            "volunteers": volunteers,
+            "tasks_total": tasks_total,
+            "tasks_completed": tasks_completed,
+            "tasks_active": tasks_active,
+            "matches_total": matches_total,
+            "matches_completed": matches_completed,
+            "total_points_awarded": total_points,
+        },
+        "leaders": leaders,
+        "recent_completed": recent_completed,
+        "heatmap": heat,
+        "categories": categories,
+    }
+
+
 # ================== HEALTH ==================
 
 @api.get("/")
@@ -1146,6 +1340,7 @@ async def startup():
     await db.matches.create_index("match_id", unique=True)
     await db.matches.create_index([("volunteer_id", 1), ("status", 1)])
     await db.user_sessions.create_index("session_token")
+    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     # Seed catalog if empty
     if await db.rewards_catalog.count_documents({}) == 0:
         for item in CATALOG_SEED:

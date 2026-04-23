@@ -10,6 +10,7 @@ import Onboarding from "./pages/Onboarding";
 import NGOPortal from "./pages/NGOPortal";
 import VolunteerPortal from "./pages/VolunteerPortal";
 import AdminPortal from "./pages/AdminPortal";
+import ImpactPage from "./pages/Impact";
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
@@ -38,6 +39,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/impact" element={<ImpactPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/onboarding" element={
