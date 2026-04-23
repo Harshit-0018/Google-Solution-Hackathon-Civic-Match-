@@ -1,0 +1,36 @@
+{
+  "summary": "Completed full backend + frontend testing of SRA (Smart Resource Allocation) MVP. 27/27 backend pytest cases pass covering health, auth, admin seed, tasks CRUD+filters, matching with 4-signal score breakdown, volunteer respond/complete flow, rewards catalog/leaderboard/redeem, and verification endpoints. Gemini translation verified — returns en/hi/ta/ml/kn/te (6 languages) for created task. All three portal UIs (/admin, /volunteer, /ngo) render correctly when session cookie set per /app/auth_testing.md, show populated stats/heatmap/urgent tasks, and expose data-testid on navigation, logout, seed-demo, heatmap, etc. Landing page renders hero, 3 portal cards, sign-in CTA with proper data-testids.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/seed-demo", "issue": "Destructive wipe: deletes ALL users with role volunteer/ngo (not only demo-seeded ones). In real deployment this would erase every registered volunteer/NGO user. Should scope deletion by demo email domain (@demo.sra) or add a demo_seed flag."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Browser tab / <title>", "issues": ["HTML <title> is still 'Emergent | Fullstack App' — should be updated to 'SRA — Smart Resource Allocation' for branding."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_sra_api.py", "/app/test_reports/pytest/sra_api_results.xml"],
+  "action_items": [
+    "(Low priority) Scope seed-demo wipe to demo-only records so it cannot accidentally delete production users.",
+    "(Low priority) Update <title> in /app/frontend/public/index.html to 'SRA — Smart Resource Allocation'."
+  ],
+  "critical_code_review_comments": [
+    "seed-demo performs broad delete_many on users/ngos/tasks/matches/rewards/rewards_catalog with no filter — would wipe live data. Consider tagging demo records.",
+    "gemini_translate executes 5 sequential Gemini calls inside a request wrapped by asyncio.wait_for(25s); with real latency translation sometimes finishes all 5 (verified in DB). Consider running translation as a background task so task creation doesn't block the request on the LLM.",
+    "compute_match_score runs an N-query impact_score per volunteer (scan matches collection + another for ratings). For larger volunteer pools this is O(V) DB roundtrips per match-run. Pre-aggregate or $lookup could help.",
+    "server.py is 1151 lines in one file — should be split into routers (auth, tasks, matching, rewards, admin) per >700-line guideline.",
+    "No rate limiting or per-user validation on /api/match/run/{task_id} — any NGO can repeatedly trigger matching for any task (the handler allows ngo role without verifying task ownership)."
+  ],
+  "updated_files": ["/app/backend/tests/test_sra_api.py"],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "100% for tested portal loads and data-testid surface"},
+  "test_credentials": "Mongo-inserted sessions — ADMIN_TOKEN=test_admin_1776961770932, VOL_TOKEN=test_vol_1776961770932, NGO_TOKEN=test_ngo_1776961770932 (user_ids: user_admin_test / user_vol_test / user_ngo_test). Regenerate via /app/auth_testing.md mongosh block.",
+  "seed_data_creation": "POST /api/admin/seed-demo already invoked — DB now has 3 NGOs, 15 volunteers, 10 Kerala-context tasks, 6 reward catalog items, plus 2 TEST_-prefixed tasks created during tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_sra_api.py and are self-bootstrapping: a session-autouse fixture re-upserts user_vol_test + user_ngo_test + ngo_test_123 to survive the destructive seed-demo wipe. Tests require env vars ADMIN_TOKEN, VOL_TOKEN, NGO_TOKEN and REACT_APP_BACKEND_URL. Gemini translation adds ~20-30s to task-creation tests; overall suite runs in ~30s. data-testids confirmed on landing (nav-signin, hero-get-started, portal-ngo/volunteer/admin, cta-get-started) and admin portal (nav-dashboard, nav-ngos, nav-volunteers, nav-run-matching, nav-audit-log, logout-btn, seed-demo-btn, heatmap).",
+  "rca of the issue": "Initial test failures were caused by /api/admin/seed-demo indiscriminately deleting all users with role volunteer or ngo — including the pre-inserted test users, which invalidated their sessions mid-run. Fixed in the test suite via an autouse fixture that re-upserts the test users; flagged as a backend design concern for main agent."
+}
