@@ -990,17 +990,25 @@ CATALOG_SEED = [
 @api.post("/admin/seed-demo")
 async def seed_demo(request: Request):
     admin = await require_role(request, ["admin"])
-    # wipe existing demo data (keep admin users & their sessions)
-    await db.ngos.delete_many({})
-    await db.tasks.delete_many({})
-    await db.matches.delete_many({})
-    await db.rewards.delete_many({})
-    await db.rewards_catalog.delete_many({})
-    await db.users.delete_many({"role": {"$in": ["volunteer", "ngo"]}})
+    # wipe only previously-seeded demo data (scoped by @demo.sra email domain)
+    demo_ngo_user_ids = [u["user_id"] async for u in db.users.find({"email": {"$regex": "@demo.sra$"}, "role": "ngo"}, {"_id": 0, "user_id": 1})]
+    demo_vol_user_ids = [u["user_id"] async for u in db.users.find({"email": {"$regex": "@demo.sra$"}, "role": "volunteer"}, {"_id": 0, "user_id": 1})]
+    demo_user_ids = demo_ngo_user_ids + demo_vol_user_ids
+    demo_ngo_ids = [n["ngo_id"] async for n in db.ngos.find({"admin_uid": {"$in": demo_ngo_user_ids}} if demo_ngo_user_ids else {"ngo_id": "__none__"}, {"_id": 0, "ngo_id": 1})]
 
-    # seed catalog
-    for item in CATALOG_SEED:
-        await db.rewards_catalog.insert_one({**item, "created_at": now_utc().isoformat()})
+    await db.users.delete_many({"email": {"$regex": "@demo.sra$"}})
+    if demo_ngo_ids:
+        await db.tasks.delete_many({"ngo_id": {"$in": demo_ngo_ids}})
+        await db.matches.delete_many({"ngo_id": {"$in": demo_ngo_ids}})
+        await db.ngos.delete_many({"ngo_id": {"$in": demo_ngo_ids}})
+    if demo_user_ids:
+        await db.rewards.delete_many({"volunteer_id": {"$in": demo_user_ids}})
+        await db.matches.delete_many({"volunteer_id": {"$in": demo_user_ids}})
+
+    # seed catalog only if empty (don't wipe existing catalog)
+    if await db.rewards_catalog.count_documents({}) == 0:
+        for item in CATALOG_SEED:
+            await db.rewards_catalog.insert_one({**item, "created_at": now_utc().isoformat()})
 
     # seed 3 NGOs
     ngos_info = [
