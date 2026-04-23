@@ -7,12 +7,13 @@ import HeatMap from "../components/HeatMap";
 import { TaskCard, StatCard, ScoreBar } from "../components/Cards";
 import { UrgencyBadge, StatusBadge, SkillTag } from "../components/Badges";
 import { toast } from "sonner";
-import { Plus, Play, CheckCircle2 } from "lucide-react";
+import { Plus, Play, CheckCircle2, Star, Users as UsersIcon } from "lucide-react";
 
 const NAV = [
   { to: "/ngo", label: "Dashboard" },
   { to: "/ngo/post", label: "Post Task" },
   { to: "/ngo/tasks", label: "My Tasks" },
+  { to: "/ngo/profile", label: "Profile" },
 ];
 
 export default function NGOPortal() {
@@ -23,6 +24,7 @@ export default function NGOPortal() {
         <Route path="post" element={<PostTask />} />
         <Route path="tasks" element={<MyTasks />} />
         <Route path="tasks/:taskId" element={<TaskDetail />} />
+        <Route path="profile" element={<NGOProfile />} />
       </Routes>
     </Layout>
   );
@@ -251,6 +253,9 @@ function TaskDetail() {
   const taskId = location.pathname.split("/").pop();
   const [task, setTask] = useState(null);
   const [matches, setMatches] = useState([]);
+  const [applicants, setApplicants] = useState([]);
+  const [ratingFor, setRatingFor] = useState(null);
+  const [ratingValue, setRatingValue] = useState(5);
   const [running, setRunning] = useState(false);
 
   const load = async () => {
@@ -258,6 +263,10 @@ function TaskDetail() {
     setTask(t);
     const { data: m } = await api.get(`/match/task/${taskId}`);
     setMatches(m);
+    try {
+      const { data: a } = await api.get(`/tasks/${taskId}/applicants`);
+      setApplicants(a);
+    } catch {}
   };
 
   useEffect(() => { load(); }, [taskId]);
@@ -277,6 +286,16 @@ function TaskDetail() {
     await api.put(`/match/${matchId}/complete`);
     toast.success("Marked complete. Points awarded.");
     load();
+  };
+
+  const submitRating = async () => {
+    if (!ratingFor) return;
+    try {
+      await api.put(`/match/${ratingFor.match_id}/rate`, { rating: ratingValue });
+      toast.success(`Rated ${ratingValue}★`);
+      setRatingFor(null);
+      load();
+    } catch { toast.error("Rating failed"); }
   };
 
   if (!task) return <div>Loading...</div>;
@@ -361,14 +380,159 @@ function TaskDetail() {
               <div className="lg:col-span-2 flex flex-col gap-2">
                 <StatusBadge status={m.status} />
                 {m.status === "accepted" && (
-                  <button onClick={() => complete(m.match_id)} className="btn-outline-black px-3 py-1.5 text-xs inline-flex items-center justify-center gap-1">
+                  <button data-testid={`complete-${m.match_id}`} onClick={() => complete(m.match_id)} className="btn-outline-black px-3 py-1.5 text-xs inline-flex items-center justify-center gap-1">
                     <CheckCircle2 size={12} /> MARK COMPLETE
                   </button>
+                )}
+                {m.status === "completed" && !m.ngo_rating && (
+                  <button data-testid={`rate-${m.match_id}`} onClick={() => { setRatingFor(m); setRatingValue(5); }} className="btn-primary px-3 py-1.5 text-xs inline-flex items-center justify-center gap-1">
+                    <Star size={12} /> RATE VOLUNTEER
+                  </button>
+                )}
+                {m.status === "completed" && m.ngo_rating && (
+                  <div className="label-mono text-[#FFC000] flex items-center gap-0.5 justify-center">
+                    {"★".repeat(m.ngo_rating)}{"☆".repeat(5 - m.ngo_rating)}
+                  </div>
                 )}
               </div>
             </div>
           </div>
         ))}
+      </div>
+
+      {applicants.length > 0 && (
+        <div className="mt-8">
+          <div className="mb-4 label-mono flex items-center gap-2">
+            <UsersIcon size={14} /> Self-Applicants ({applicants.length})
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {applicants.map((a) => (
+              <div key={a.user_id} className="border border-[#E5E5E5] bg-white p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  {a.picture ? <img src={a.picture} alt="" className="w-9 h-9 border border-[#E5E5E5]" /> : <div className="w-9 h-9 bg-[#111] text-white flex items-center justify-center font-mono text-xs">{a.name?.[0]}</div>}
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm truncate">{a.name}</div>
+                    <div className="label-mono truncate">{a.location_name}</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {(a.skills || []).slice(0, 4).map((s) => <SkillTag key={s}>{s}</SkillTag>)}
+                </div>
+                <div className="text-[10px] font-mono text-[#5C5C5C] flex items-center justify-between border-t border-[#E5E5E5] pt-2 mt-2">
+                  <span>{a.total_points || 0} pts</span>
+                  <span>{(a.badges || []).length} badges</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ratingFor && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setRatingFor(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white border border-[#111] p-6 w-full max-w-md shadow-[6px_6px_0_0_#111]">
+            <div className="label-mono mb-2">Rate volunteer</div>
+            <h3 className="font-heading font-bold text-xl mb-4">{ratingFor.volunteer_name}</h3>
+            <div className="flex gap-2 mb-5">
+              {[1,2,3,4,5].map((v) => (
+                <button key={v} data-testid={`rate-star-${v}`} onClick={() => setRatingValue(v)}
+                  className={`w-12 h-12 flex items-center justify-center text-2xl border ${ratingValue >= v ? "bg-[#FFC000] border-[#FFC000]" : "border-[#E5E5E5] text-[#E5E5E5]"}`}>
+                  ★
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button data-testid="rating-submit" onClick={submitRating} className="btn-primary px-4 py-2 text-sm flex-1">SUBMIT</button>
+              <button onClick={() => setRatingFor(null)} className="btn-outline-black px-4 py-2 text-sm">CANCEL</button>
+            </div>
+            <p className="text-xs text-[#5C5C5C] mt-3">5-star rating awards the volunteer a +50 bonus.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NGOProfile() {
+  const { user } = useAuth();
+  const [ngo, setNgo] = useState(null);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    if (!user?.ngo_id) return;
+    const { data } = await api.get(`/ngos/${user.ngo_id}`);
+    setNgo(data);
+    setForm({
+      name: data.name || "", description: data.description || "",
+      website: data.website || "", contact_email: data.contact_email || "",
+      focus_areas: data.focus_areas || [],
+      location_lat: data.location_lat, location_lng: data.location_lng,
+      location_name: data.location_name || "", registration_no: data.registration_no || "",
+    });
+  };
+  useEffect(() => { load(); }, [user]);
+
+  const FOCUS_OPTIONS = ["education", "healthcare", "disaster relief", "environment", "women empowerment", "skills training"];
+
+  const toggleFocus = (f) =>
+    setForm((g) => ({ ...g, focus_areas: g.focus_areas.includes(f) ? g.focus_areas.filter((x) => x !== f) : [...g.focus_areas, f] }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put("/ngos/me", form);
+      toast.success("Profile updated");
+      load();
+    } catch { toast.error("Save failed"); }
+    setSaving(false);
+  };
+
+  if (!ngo) return <div className="label-mono">Loading NGO profile...</div>;
+
+  return (
+    <div className="max-w-3xl">
+      <div className="label-mono mb-2">Organisation</div>
+      <h1 className="font-heading font-black text-4xl tracking-tighter mb-6">{ngo.name}</h1>
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="border border-[#E5E5E5] bg-white p-4">
+          <div className="label-mono mb-1">Verified</div>
+          <div className="font-heading font-black text-xl">{ngo.verified ? "YES" : "PENDING"}</div>
+        </div>
+        <div className="border border-[#E5E5E5] bg-white p-4">
+          <div className="label-mono mb-1">Tasks posted</div>
+          <div className="font-heading font-black text-xl">{ngo.total_tasks_posted || 0}</div>
+        </div>
+        <div className="border border-[#E5E5E5] bg-white p-4">
+          <div className="label-mono mb-1">Rating</div>
+          <div className="font-heading font-black text-xl">{ngo.rating || 0}/5</div>
+        </div>
+      </div>
+      <div className="border border-[#E5E5E5] bg-white p-6 space-y-4">
+        <Field label="Name"><input data-testid="ngo-name" className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Registration number"><input className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.registration_no} onChange={(e) => setForm({ ...form, registration_no: e.target.value })} /></Field>
+        <Field label="Description"><textarea rows={3} className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+        <Field label="Website"><input className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} /></Field>
+        <Field label="Contact email"><input className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></Field>
+        <Field label="Focus areas">
+          <div className="flex flex-wrap gap-2">
+            {FOCUS_OPTIONS.map((f) => (
+              <button key={f} onClick={() => toggleFocus(f)} className={`text-xs px-3 py-1.5 border font-mono uppercase ${form.focus_areas?.includes(f) ? "bg-[#002FA7] text-white border-[#002FA7]" : "border-[#E5E5E5]"}`}>
+                {f}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Location">
+          <input className="border border-[#E5E5E5] px-3 py-2 w-full mb-2" value={form.location_name} onChange={(e) => setForm({ ...form, location_name: e.target.value })} />
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" step="0.001" className="border border-[#E5E5E5] px-3 py-2 font-mono text-sm" value={form.location_lat} onChange={(e) => setForm({ ...form, location_lat: parseFloat(e.target.value) })} />
+            <input type="number" step="0.001" className="border border-[#E5E5E5] px-3 py-2 font-mono text-sm" value={form.location_lng} onChange={(e) => setForm({ ...form, location_lng: parseFloat(e.target.value) })} />
+          </div>
+        </Field>
+        <button data-testid="ngo-save" onClick={save} disabled={saving} className="btn-primary w-full py-3 font-medium">
+          {saving ? "SAVING..." : "SAVE PROFILE"}
+        </button>
       </div>
     </div>
   );

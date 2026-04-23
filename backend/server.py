@@ -520,6 +520,20 @@ async def delete_ngo(ngo_id: str, request: Request):
     return {"ok": True}
 
 
+@api.put("/ngos/me")
+async def update_my_ngo(body: Dict[str, Any], request: Request):
+    user = await require_role(request, ["ngo"])
+    if not user.get("ngo_id"):
+        raise HTTPException(400, "No NGO profile")
+    allowed = {"name", "description", "website", "focus_areas", "contact_email",
+               "location_lat", "location_lng", "location_name", "registration_no"}
+    update = {k: v for k, v in body.items() if k in allowed}
+    if update:
+        await db.ngos.update_one({"ngo_id": user["ngo_id"]}, {"$set": update})
+    await audit_log("update_ngo", user, user["ngo_id"], "ngos", update)
+    return await db.ngos.find_one({"ngo_id": user["ngo_id"]}, {"_id": 0})
+
+
 # ================== TASKS ==================
 
 class TaskCreate(BaseModel):
@@ -729,7 +743,39 @@ async def apply_task(task_id: str, request: Request):
     user = await require_role(request, ["volunteer"])
     await db.tasks.update_one({"task_id": task_id}, {"$addToSet": {"applicants": user['user_id']}})
     await audit_log("apply_task", user, task_id, "tasks")
+    # notify NGO admin
+    task = await db.tasks.find_one({"task_id": task_id}, {"_id": 0})
+    if task:
+        ngo = await db.ngos.find_one({"ngo_id": task.get('ngo_id')}, {"_id": 0})
+        if ngo and ngo.get("admin_uid"):
+            await create_notification(
+                user_id=ngo["admin_uid"],
+                kind="task_applied",
+                title="New applicant",
+                body=f"{user['name']} applied for \"{task.get('title','your task')}\"",
+                link=f"/ngo/tasks/{task_id}",
+                meta={"task_id": task_id, "volunteer_id": user['user_id']},
+            )
     return {"ok": True}
+
+
+@api.get("/tasks/{task_id}/applicants")
+async def task_applicants(task_id: str, request: Request):
+    user = await require_role(request, ["ngo", "admin"])
+    task = await db.tasks.find_one({"task_id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if user['role'] == 'ngo' and task.get('ngo_id') != user.get('ngo_id'):
+        raise HTTPException(403, "Not your task")
+    uids = task.get("applicants", [])
+    if not uids:
+        return []
+    cursor = db.users.find(
+        {"user_id": {"$in": uids}},
+        {"_id": 0, "user_id": 1, "name": 1, "picture": 1, "skills": 1, "languages": 1,
+         "location_name": 1, "total_points": 1, "badges": 1, "experience": 1}
+    )
+    return [d async for d in cursor]
 
 
 # ================== MATCHING ==================
@@ -831,9 +877,34 @@ async def respond_match(match_id: str, body: MatchResponse, request: Request):
     await db.matches.update_one({"match_id": match_id}, {"$set": {
         "status": body.status,
         "volunteer_response": body.reason,
+        "responded_at": now_utc().isoformat(),
     }})
     if body.status == "accepted":
         await db.tasks.update_one({"task_id": match['task_id']}, {"$inc": {"volunteers_matched": 1}, "$set": {"status": "active"}})
+        # Award speed_volunteer badge if accepted within 1 hour of match creation
+        try:
+            created = match.get('created_at')
+            if isinstance(created, str):
+                created_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+                if (now_utc() - created_dt) <= timedelta(hours=1):
+                    vol = await db.users.find_one({"user_id": user['user_id']}, {"_id": 0})
+                    badges = set(vol.get('badges', []))
+                    if "speed_volunteer" not in badges:
+                        badges.add("speed_volunteer")
+                        await db.users.update_one({"user_id": user['user_id']}, {"$set": {"badges": list(badges)}})
+                        await create_notification(
+                            user_id=user['user_id'],
+                            kind="badge_earned",
+                            title="Badge earned: Speed Volunteer",
+                            body="You accepted a match within an hour. Amazing response time!",
+                            link="/volunteer/rewards",
+                            meta={"badge": "speed_volunteer"},
+                        )
+        except Exception:
+            pass
+
     # Notify NGO admin
     ngo = await db.ngos.find_one({"ngo_id": match.get('ngo_id')}, {"_id": 0})
     if ngo and ngo.get("admin_uid"):
@@ -886,8 +957,31 @@ async def complete_match(match_id: str, request: Request):
     badges = set(vol.get('badges', []))
     if completed_count >= 1: badges.add("first_responder")
     if vol.get('total_points', 0) >= 1000: badges.add("community_hero")
-    if completed_count >= 5: badges.add("skill_champion")
+    # skill_champion: 5 completed tasks in same category
+    if task and task.get('category'):
+        same_cat = await db.matches.aggregate([
+            {"$match": {"volunteer_id": match['volunteer_id'], "status": "completed"}},
+            {"$lookup": {"from": "tasks", "localField": "task_id", "foreignField": "task_id", "as": "t"}},
+            {"$unwind": "$t"},
+            {"$match": {"t.category": task['category']}},
+            {"$count": "n"}
+        ]).to_list(1)
+        if same_cat and same_cat[0].get('n', 0) >= 5:
+            badges.add("skill_champion")
+    # multilingual: any completed task with translations other than English
+    if task and task.get('description_translated') and len([k for k in task['description_translated'].keys() if k != 'en']) > 0:
+        badges.add("multilingual")
+    new_badges = badges - set(vol.get('badges', []))
     await db.users.update_one({"user_id": match['volunteer_id']}, {"$set": {"badges": list(badges)}})
+    for b in new_badges:
+        await create_notification(
+            user_id=match['volunteer_id'],
+            kind="badge_earned",
+            title=f"Badge earned: {b.replace('_', ' ').title()}",
+            body="Open rewards to see your full badge wall.",
+            link="/volunteer/rewards",
+            meta={"badge": b},
+        )
 
     await audit_log("complete_match", user, match_id, "matches", {"points": points + milestone_bonus})
     # Notify volunteer about points & completion
@@ -974,8 +1068,9 @@ async def redeem(body: RedeemRequest, request: Request):
         raise HTTPException(400, "Out of stock")
     await db.users.update_one({"user_id": user['user_id']}, {"$inc": {"total_points": -item['points_cost']}})
     await db.rewards_catalog.update_one({"catalog_id": body.catalog_id}, {"$inc": {"stock": -1}})
+    redemption_id = f"rwd_{uuid.uuid4().hex[:10]}"
     redemption = {
-        "reward_id": f"rwd_{uuid.uuid4().hex[:10]}",
+        "reward_id": redemption_id,
         "volunteer_id": user['user_id'],
         "volunteer_name": user['name'],
         "type": "redemption",
@@ -987,7 +1082,19 @@ async def redeem(body: RedeemRequest, request: Request):
         "created_at": now_utc().isoformat(),
     }
     await db.rewards.insert_one(redemption)
+    redemption.pop("_id", None)
     await audit_log("redeem_reward", user, body.catalog_id, "rewards_catalog", {"title": item['title']})
+    # Notify all admins
+    admins = await db.users.find({"role": "admin"}, {"_id": 0, "user_id": 1}).to_list(20)
+    for a in admins:
+        await create_notification(
+            user_id=a["user_id"],
+            kind="reward_redeemed",
+            title="Reward redeemed — action needed",
+            body=f"{user['name']} redeemed \"{item['title']}\" for {item['points_cost']} points. Please fulfil.",
+            link="/admin/redemptions",
+            meta={"reward_id": redemption_id, "catalog_id": body.catalog_id},
+        )
     return redemption
 
 
@@ -1221,6 +1328,250 @@ async def seed_demo(request: Request):
     return {"ok": True, "ngos": 3, "volunteers": 15, "tasks": 10, "catalog": len(CATALOG_SEED)}
 
 
+# ================== ADMIN REDEMPTIONS ==================
+
+@api.get("/admin/redemptions")
+async def admin_list_redemptions(request: Request, fulfilled: Optional[bool] = None):
+    await require_role(request, ["admin"])
+    q: Dict[str, Any] = {"type": "redemption"}
+    if fulfilled is not None:
+        q["fulfilled"] = fulfilled
+    cursor = db.rewards.find(q, {"_id": 0}).sort("created_at", -1).limit(200)
+    return [d async for d in cursor]
+
+
+@api.put("/admin/redemptions/{reward_id}/fulfill")
+async def admin_fulfill_redemption(reward_id: str, request: Request):
+    admin = await require_role(request, ["admin"])
+    rwd = await db.rewards.find_one({"reward_id": reward_id}, {"_id": 0})
+    if not rwd:
+        raise HTTPException(404, "Redemption not found")
+    await db.rewards.update_one(
+        {"reward_id": reward_id},
+        {"$set": {"fulfilled": True, "fulfilled_at": now_utc().isoformat(), "fulfilled_by": admin["user_id"]}}
+    )
+    await audit_log("fulfill_redemption", admin, reward_id, "rewards")
+    # notify volunteer
+    await create_notification(
+        user_id=rwd["volunteer_id"],
+        kind="redemption_fulfilled",
+        title="Your reward is on the way!",
+        body=f"Admin has fulfilled your redemption: {rwd.get('catalog_title','reward')}.",
+        link="/volunteer/rewards",
+        meta={"reward_id": reward_id},
+    )
+    return {"ok": True}
+
+
+# ================== GOOGLE FORMS PIPELINE ==================
+
+PIPELINE_SECRET = os.environ.get("PIPELINE_SECRET", "demo-pipeline-secret")
+
+
+class PipelinePayload(BaseModel):
+    area: Optional[str] = None
+    category: Optional[str] = "other"
+    description: str
+    affected_count: Optional[int] = 0
+    urgency: Optional[int] = 3
+    contact: Optional[str] = None
+    raw_location: Optional[str] = None
+    source: str = "google_forms"
+
+
+async def gemini_extract_skills(description: str, category: str) -> List[str]:
+    """Use Gemini to extract suggested required skills from a free-text community need."""
+    if not EMERGENT_LLM_KEY or not description:
+        return []
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"skills_{uuid.uuid4().hex[:8]}",
+            system_message=(
+                "You are a community-needs analyst. Given a description of a community need, "
+                "output a comma-separated list of 3-6 volunteer skills needed. "
+                "Output ONLY the skills, lowercase, comma-separated, no numbers or explanation."
+            )
+        ).with_model("gemini", "gemini-2.5-flash")
+        resp = await chat.send_message(UserMessage(text=f"CATEGORY: {category}\nNEED: {description[:600]}\n\nSkills needed:"))
+        raw = (resp or "").strip()
+        items = [s.strip().lower() for s in raw.replace("\n", ",").split(",") if s.strip()]
+        return [s for s in items if 1 < len(s) < 40][:8]
+    except Exception as e:
+        logger.warning(f"skill extract failed: {e}")
+        return []
+
+
+# Simple geocoding stub: looks up Kerala location names from a built-in gazetteer
+GAZETTEER = {k.lower(): (lat, lng) for k, lat, lng in KERALA_LOCATIONS}
+
+
+def simple_geocode(raw: str) -> tuple:
+    """Best-effort geocoding without paid API. Matches Kerala city names."""
+    if not raw:
+        return (10.8505, 76.2711)
+    s = raw.lower()
+    for key, (lat, lng) in GAZETTEER.items():
+        if key in s:
+            return (lat, lng)
+    # default to Kerala centroid
+    return (10.8505, 76.2711)
+
+
+@api.post("/pipeline/ingest")
+async def pipeline_ingest(payload: PipelinePayload, request: Request):
+    """Webhook endpoint for Google Apps Script / Forms → Sheets integration.
+    Authenticated by X-Pipeline-Secret header (not Firebase JWT)."""
+    secret = request.headers.get("X-Pipeline-Secret", "")
+    if secret != PIPELINE_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid pipeline secret")
+
+    lat, lng = simple_geocode(payload.raw_location or payload.area or "")
+
+    # Run Gemini translation + skill extraction in parallel
+    translations = {"en": payload.description}
+    extracted_skills: List[str] = []
+    try:
+        t_res, s_res = await asyncio.wait_for(
+            asyncio.gather(
+                gemini_translate(payload.description),
+                gemini_extract_skills(payload.description, payload.category or "other"),
+                return_exceptions=True,
+            ),
+            timeout=30.0,
+        )
+        if not isinstance(t_res, Exception) and t_res:
+            translations = t_res
+        if not isinstance(s_res, Exception) and s_res:
+            extracted_skills = s_res
+    except asyncio.TimeoutError:
+        pass
+
+    submission_id = f"pipe_{uuid.uuid4().hex[:12]}"
+    doc = {
+        "submission_id": submission_id,
+        "source": payload.source,
+        "area": payload.area,
+        "category": payload.category,
+        "description": payload.description,
+        "description_translated": translations,
+        "affected_count": payload.affected_count,
+        "urgency": payload.urgency,
+        "contact": payload.contact,
+        "raw_location": payload.raw_location,
+        "geocoded_lat": lat,
+        "geocoded_lng": lng,
+        "suggested_skills": extracted_skills,
+        "status": "pending",  # pending | published | discarded
+        "created_at": now_utc().isoformat(),
+    }
+    await db.pipeline_submissions.insert_one(doc)
+    # notify admins
+    admins = await db.users.find({"role": "admin"}, {"_id": 0, "user_id": 1}).to_list(20)
+    for a in admins:
+        await create_notification(
+            user_id=a["user_id"],
+            kind="pipeline_submission",
+            title="New Google Forms submission",
+            body=f"{payload.category}: {payload.description[:80]}",
+            link="/admin/pipeline",
+            meta={"submission_id": submission_id},
+        )
+    return {"ok": True, "submission_id": submission_id}
+
+
+@api.get("/admin/pipeline")
+async def admin_list_pipeline(request: Request, status: Optional[str] = None):
+    await require_role(request, ["admin"])
+    q: Dict[str, Any] = {}
+    if status:
+        q["status"] = status
+    cursor = db.pipeline_submissions.find(q, {"_id": 0}).sort("created_at", -1).limit(200)
+    return [d async for d in cursor]
+
+
+class PipelinePublishRequest(BaseModel):
+    ngo_id: Optional[str] = None
+    title: Optional[str] = None
+    volunteers_required: int = 5
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+@api.post("/admin/pipeline/{submission_id}/publish")
+async def admin_publish_pipeline(submission_id: str, body: PipelinePublishRequest, request: Request):
+    admin = await require_role(request, ["admin"])
+    sub = await db.pipeline_submissions.find_one({"submission_id": submission_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Not found")
+    if sub.get("status") != "pending":
+        raise HTTPException(400, f"Already {sub.get('status')}")
+
+    # Pick an NGO (default first verified one of the category)
+    ngo_id = body.ngo_id
+    if not ngo_id:
+        n = await db.ngos.find_one({"verified": True}, {"_id": 0})
+        if n:
+            ngo_id = n["ngo_id"]
+    ngo = await db.ngos.find_one({"ngo_id": ngo_id}, {"_id": 0}) if ngo_id else None
+
+    task_id = f"task_{uuid.uuid4().hex[:10]}"
+    desc = sub.get("description", "")
+    start = body.start_date or now_utc().strftime("%Y-%m-%d")
+    end = body.end_date or (now_utc() + timedelta(days=14)).strftime("%Y-%m-%d")
+    doc = {
+        "task_id": task_id,
+        "ngo_id": ngo_id or "admin",
+        "ngo_name": ngo["name"] if ngo else "Pipeline Intake",
+        "title": body.title or (desc[:60] + ("..." if len(desc) > 60 else "")),
+        "description": desc,
+        "description_translated": sub.get("description_translated", {"en": desc}),
+        "urgency": sub.get("urgency", 3),
+        "urgency_score": float(sub.get("urgency", 3)),
+        "category": sub.get("category", "other"),
+        "required_skills": sub.get("suggested_skills", []),
+        "semantic_skills": [],
+        "required_slots": ["morning", "afternoon"],
+        "location_lat": sub.get("geocoded_lat", 10.8505),
+        "location_lng": sub.get("geocoded_lng", 76.2711),
+        "location_name": sub.get("area") or "Kerala",
+        "address": sub.get("raw_location", ""),
+        "volunteers_required": body.volunteers_required,
+        "volunteers_matched": 0,
+        "start_date": start,
+        "end_date": end,
+        "status": "open",
+        "applicants": [],
+        "source": "google_forms_pipeline",
+        "submission_id": submission_id,
+        "created_at": now_utc().isoformat(),
+    }
+    await db.tasks.insert_one(doc)
+    await db.pipeline_submissions.update_one(
+        {"submission_id": submission_id},
+        {"$set": {"status": "published", "task_id": task_id, "published_at": now_utc().isoformat()}}
+    )
+    if ngo_id:
+        await db.ngos.update_one({"ngo_id": ngo_id}, {"$inc": {"total_tasks_posted": 1}})
+    await audit_log("publish_pipeline", admin, submission_id, "pipeline_submissions", {"task_id": task_id})
+    return {"ok": True, "task_id": task_id}
+
+
+@api.post("/admin/pipeline/{submission_id}/discard")
+async def admin_discard_pipeline(submission_id: str, request: Request):
+    admin = await require_role(request, ["admin"])
+    sub = await db.pipeline_submissions.find_one({"submission_id": submission_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(404, "Not found")
+    await db.pipeline_submissions.update_one(
+        {"submission_id": submission_id},
+        {"$set": {"status": "discarded", "discarded_at": now_utc().isoformat()}}
+    )
+    await audit_log("discard_pipeline", admin, submission_id, "pipeline_submissions")
+    return {"ok": True}
+
+
 # ================== NOTIFICATIONS ==================
 
 @api.get("/notifications")
@@ -1363,6 +1714,7 @@ async def startup():
     await db.matches.create_index([("volunteer_id", 1), ("status", 1)])
     await db.user_sessions.create_index("session_token")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.pipeline_submissions.create_index([("status", 1), ("created_at", -1)])
     # Seed catalog if empty
     if await db.rewards_catalog.count_documents({}) == 0:
         for item in CATALOG_SEED:

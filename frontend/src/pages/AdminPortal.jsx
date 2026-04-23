@@ -6,13 +6,15 @@ import HeatMap from "../components/HeatMap";
 import { StatCard, ScoreBar } from "../components/Cards";
 import { UrgencyBadge, StatusBadge, SkillTag } from "../components/Badges";
 import { toast } from "sonner";
-import { Check, Trash2, Play, Database, Shield, ShieldCheck } from "lucide-react";
+import { Check, Trash2, Play, Database, Shield, ShieldCheck, Inbox, Gift, CheckCircle2, X } from "lucide-react";
 
 const NAV = [
   { to: "/admin", label: "Dashboard" },
   { to: "/admin/ngos", label: "NGOs" },
   { to: "/admin/volunteers", label: "Volunteers" },
   { to: "/admin/matching", label: "Run Matching" },
+  { to: "/admin/pipeline", label: "Form Submissions" },
+  { to: "/admin/redemptions", label: "Redemptions" },
   { to: "/admin/audit", label: "Audit Log" },
 ];
 
@@ -24,6 +26,8 @@ export default function AdminPortal() {
         <Route path="ngos" element={<ManageNGOs />} />
         <Route path="volunteers" element={<ManageVolunteers />} />
         <Route path="matching" element={<RunMatching />} />
+        <Route path="pipeline" element={<PipelineSubmissions />} />
+        <Route path="redemptions" element={<Redemptions />} />
         <Route path="audit" element={<AuditLog />} />
       </Routes>
     </Layout>
@@ -334,3 +338,243 @@ function AuditLog() {
 
 function Th({ children }) { return <th className="text-left px-4 py-3 font-mono text-[11px] uppercase tracking-wider">{children}</th>; }
 function Td({ children, className = "", colSpan }) { return <td colSpan={colSpan} className={`px-4 py-3 align-top ${className}`}>{children}</td>; }
+
+function PipelineSubmissions() {
+  const [subs, setSubs] = useState([]);
+  const [ngos, setNgos] = useState([]);
+  const [filter, setFilter] = useState("pending");
+  const [selected, setSelected] = useState(null);
+  const [publishForm, setPublishForm] = useState({ ngo_id: "", title: "", volunteers_required: 5 });
+
+  const load = async () => {
+    const [s, n] = await Promise.all([
+      api.get("/admin/pipeline", { params: filter === "all" ? {} : { status: filter } }),
+      api.get("/ngos"),
+    ]);
+    setSubs(s.data); setNgos(n.data);
+  };
+  useEffect(() => { load(); }, [filter]);
+
+  const pick = (s) => {
+    setSelected(s);
+    setPublishForm({
+      ngo_id: ngos.find((n) => (n.focus_areas || []).includes(s.category))?.ngo_id || ngos[0]?.ngo_id || "",
+      title: (s.description || "").slice(0, 60),
+      volunteers_required: s.affected_count > 50 ? 10 : 5,
+    });
+  };
+
+  const publish = async () => {
+    if (!selected) return;
+    try {
+      await api.post(`/admin/pipeline/${selected.submission_id}/publish`, publishForm);
+      toast.success("Published as open task");
+      setSelected(null);
+      load();
+    } catch { toast.error("Publish failed"); }
+  };
+
+  const discard = async (id) => {
+    if (!window.confirm("Discard this submission?")) return;
+    await api.post(`/admin/pipeline/${id}/discard`);
+    toast.success("Discarded");
+    if (selected?.submission_id === id) setSelected(null);
+    load();
+  };
+
+  return (
+    <div>
+      <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <div className="label-mono mb-2">Google Forms Pipeline</div>
+          <h1 className="font-heading font-black text-4xl tracking-tighter">Field reports intake</h1>
+          <p className="text-[#5C5C5C] text-sm mt-2">
+            Paper surveys → Google Forms → webhook → Gemini translate + skill extract → admin review.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="label-mono">Filter:</span>
+          {["pending", "published", "discarded", "all"].map((f) => (
+            <button key={f} data-testid={`pipeline-filter-${f}`} onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 text-xs font-mono uppercase border ${filter === f ? "bg-[#111] text-white border-[#111]" : "border-[#E5E5E5]"}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-5 gap-6">
+        <div className="lg:col-span-2 border border-[#E5E5E5] bg-white p-3">
+          <div className="label-mono mb-2 px-2">{subs.length} submissions</div>
+          <div className="space-y-2 max-h-[640px] overflow-auto">
+            {subs.map((s) => (
+              <button key={s.submission_id} data-testid={`pipeline-pick-${s.submission_id}`} onClick={() => pick(s)}
+                className={`w-full text-left p-3 border ${selected?.submission_id === s.submission_id ? "border-[#002FA7] bg-[#F0F4FF]" : "border-[#E5E5E5]"}`}>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <UrgencyBadge value={s.urgency || 3} />
+                  <StatusBadge status={s.status} />
+                  <span className="label-mono">{s.category}</span>
+                </div>
+                <div className="text-sm font-medium line-clamp-2">{s.description}</div>
+                <div className="text-[10px] font-mono text-[#5C5C5C] mt-1">{s.area || s.raw_location} · {new Date(s.created_at).toLocaleString()}</div>
+              </button>
+            ))}
+            {subs.length === 0 && (
+              <div className="text-center py-10 text-[#5C5C5C] text-sm">
+                <Inbox size={32} className="mx-auto mb-2 opacity-40" strokeWidth={1.5} />
+                No submissions. Send form data to<br/>
+                <code className="text-[10px]">POST /api/pipeline/ingest</code>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="lg:col-span-3">
+          {selected ? (
+            <div className="border border-[#E5E5E5] bg-white p-5 space-y-5">
+              <div>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <UrgencyBadge value={selected.urgency || 3} />
+                  <span className="label-mono">{selected.category}</span>
+                  <span className="label-mono text-[#002FA7]">{selected.source?.toUpperCase()}</span>
+                </div>
+                <div className="font-heading font-bold text-lg mb-1">{selected.area || selected.raw_location}</div>
+                <p className="text-sm text-[#5C5C5C]">{selected.description}</p>
+                <div className="mt-2 text-xs font-mono">
+                  <span className="text-[#5C5C5C]">Contact:</span> {selected.contact || "—"} &nbsp;·&nbsp;
+                  <span className="text-[#5C5C5C]">Affected:</span> {selected.affected_count || 0}
+                </div>
+              </div>
+              {selected.suggested_skills?.length > 0 && (
+                <div>
+                  <div className="label-mono text-[#002FA7] mb-1.5">GEMINI-SUGGESTED SKILLS</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selected.suggested_skills.map((s) => <SkillTag key={s}>{s}</SkillTag>)}
+                  </div>
+                </div>
+              )}
+              {selected.description_translated && Object.keys(selected.description_translated).length > 1 && (
+                <div>
+                  <div className="label-mono text-[#002FA7] mb-1.5">GEMINI TRANSLATIONS</div>
+                  <div className="space-y-1 text-sm">
+                    {Object.entries(selected.description_translated)
+                      .filter(([k]) => k !== "en")
+                      .slice(0, 3)
+                      .map(([k, v]) => (
+                        <div key={k} className="border-l-2 border-[#E5E5E5] pl-3">
+                          <span className="label-mono text-[#5C5C5C]">{k.toUpperCase()}:</span> {v}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+              {selected.status === "pending" && (
+                <div className="border-t border-[#E5E5E5] pt-5 space-y-3">
+                  <div className="label-mono">Publish as open task</div>
+                  <div className="grid md:grid-cols-3 gap-3">
+                    <label className="block">
+                      <div className="label-mono mb-1">Assign NGO</div>
+                      <select data-testid="pipeline-ngo-select" value={publishForm.ngo_id} onChange={(e) => setPublishForm({ ...publishForm, ngo_id: e.target.value })} className="border border-[#E5E5E5] px-2 py-2 w-full bg-white text-sm">
+                        {ngos.filter((n) => n.verified).map((n) => (
+                          <option key={n.ngo_id} value={n.ngo_id}>{n.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <div className="label-mono mb-1">Task title</div>
+                      <input data-testid="pipeline-title" value={publishForm.title} onChange={(e) => setPublishForm({ ...publishForm, title: e.target.value })} className="border border-[#E5E5E5] px-2 py-2 w-full text-sm" />
+                    </label>
+                    <label className="block">
+                      <div className="label-mono mb-1">Volunteers needed</div>
+                      <input type="number" min="1" data-testid="pipeline-vol-count" value={publishForm.volunteers_required} onChange={(e) => setPublishForm({ ...publishForm, volunteers_required: parseInt(e.target.value || 1) })} className="border border-[#E5E5E5] px-2 py-2 w-full text-sm" />
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <button data-testid="pipeline-publish" onClick={publish} className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2">
+                      <CheckCircle2 size={14} /> PUBLISH
+                    </button>
+                    <button data-testid="pipeline-discard" onClick={() => discard(selected.submission_id)} className="btn-outline-black px-4 py-2 text-sm inline-flex items-center gap-2">
+                      <X size={14} /> DISCARD
+                    </button>
+                  </div>
+                </div>
+              )}
+              {selected.status === "published" && (
+                <div className="border-t border-[#E5E5E5] pt-5 text-sm text-[#5C5C5C]">
+                  Published as task <code className="font-mono">{selected.task_id}</code>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="border border-dashed border-[#E5E5E5] p-10 text-center text-[#5C5C5C] text-sm">
+              Select a submission on the left to review, translate, publish or discard.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Redemptions() {
+  const [items, setItems] = useState([]);
+  const [filter, setFilter] = useState("pending");
+  const load = async () => {
+    const params = filter === "pending" ? { fulfilled: false } : filter === "fulfilled" ? { fulfilled: true } : {};
+    const { data } = await api.get("/admin/redemptions", { params });
+    setItems(data);
+  };
+  useEffect(() => { load(); }, [filter]);
+
+  const fulfill = async (id) => {
+    await api.put(`/admin/redemptions/${id}/fulfill`);
+    toast.success("Marked fulfilled");
+    load();
+  };
+
+  return (
+    <div>
+      <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <div className="label-mono mb-2">Reward Fulfillment</div>
+          <h1 className="font-heading font-black text-4xl tracking-tighter inline-flex items-center gap-3">
+            <Gift size={30} className="text-[#002FA7]" /> Redemptions
+          </h1>
+        </div>
+        <div className="flex gap-2">
+          {["pending", "fulfilled", "all"].map((f) => (
+            <button key={f} data-testid={`redemption-filter-${f}`} onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 text-xs font-mono uppercase border ${filter === f ? "bg-[#111] text-white border-[#111]" : "border-[#E5E5E5]"}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="border border-[#E5E5E5] bg-white overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-[#F5F5F5] border-b border-[#E5E5E5]">
+            <tr><Th>DATE</Th><Th>VOLUNTEER</Th><Th>ITEM</Th><Th>COST</Th><Th>STATUS</Th><Th>ACTION</Th></tr>
+          </thead>
+          <tbody>
+            {items.map((r) => (
+              <tr key={r.reward_id} className="border-b border-[#E5E5E5]">
+                <Td className="font-mono text-xs">{new Date(r.created_at).toLocaleDateString()}</Td>
+                <Td><div className="font-medium">{r.volunteer_name}</div><div className="text-[10px] font-mono text-[#5C5C5C]">{r.volunteer_id}</div></Td>
+                <Td><div className="font-medium">{r.catalog_title}</div></Td>
+                <Td className="font-mono font-bold">{Math.abs(r.points)} pts</Td>
+                <Td>{r.fulfilled ? <span className="text-[#00C05A] font-mono text-xs">FULFILLED</span> : <span className="text-[#FFC000] font-mono text-xs">PENDING</span>}</Td>
+                <Td>
+                  {!r.fulfilled && (
+                    <button data-testid={`fulfill-${r.reward_id}`} onClick={() => fulfill(r.reward_id)} className="btn-primary px-3 py-1.5 text-[10px] inline-flex items-center gap-1">
+                      <CheckCircle2 size={10} /> FULFIL
+                    </button>
+                  )}
+                </Td>
+              </tr>
+            ))}
+            {items.length === 0 && <tr><Td colSpan={6} className="text-center py-10 text-[#5C5C5C]">No redemptions {filter === "pending" ? "pending" : filter === "fulfilled" ? "fulfilled" : "yet"}.</Td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

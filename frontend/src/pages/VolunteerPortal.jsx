@@ -6,14 +6,16 @@ import { api } from "../lib/api";
 import HeatMap from "../components/HeatMap";
 import { TaskCard, ScoreBar, StatCard } from "../components/Cards";
 import { UrgencyBadge, StatusBadge, SkillTag } from "../components/Badges";
+import ShareImpactCard from "../components/ShareImpactCard";
 import { toast } from "sonner";
-import { Award, Trophy, Check, X, Gift, Languages } from "lucide-react";
+import { Award, Trophy, Check, X, Gift, Languages, Star, Share2, Download } from "lucide-react";
 
 const NAV = [
   { to: "/volunteer", label: "Dashboard" },
   { to: "/volunteer/browse", label: "Browse Tasks" },
   { to: "/volunteer/matches", label: "My Matches" },
   { to: "/volunteer/rewards", label: "Rewards" },
+  { to: "/volunteer/profile", label: "Profile" },
 ];
 
 export default function VolunteerPortal() {
@@ -24,6 +26,7 @@ export default function VolunteerPortal() {
         <Route path="browse" element={<BrowseTasks />} />
         <Route path="matches" element={<MyMatches />} />
         <Route path="rewards" element={<Rewards />} />
+        <Route path="profile" element={<VolunteerProfile />} />
       </Routes>
     </Layout>
   );
@@ -195,6 +198,8 @@ function BrowseTasks() {
 
 function MyMatches() {
   const [matches, setMatches] = useState([]);
+  const [ratingFor, setRatingFor] = useState(null);
+  const [ratingValue, setRatingValue] = useState(5);
 
   const load = async () => {
     const { data } = await api.get("/match/my-matches");
@@ -208,6 +213,16 @@ function MyMatches() {
       toast.success(`Match ${status}`);
       load();
     } catch { toast.error("Failed"); }
+  };
+
+  const submitRating = async () => {
+    if (!ratingFor) return;
+    try {
+      await api.put(`/match/${ratingFor.match_id}/rate`, { rating: ratingValue });
+      toast.success(`Rated ${ratingValue}★`);
+      setRatingFor(null);
+      load();
+    } catch { toast.error("Rating failed"); }
   };
 
   return (
@@ -247,12 +262,43 @@ function MyMatches() {
                     </button>
                   </>
                 )}
+                {m.status === "completed" && !m.volunteer_rating && (
+                  <button data-testid={`rate-ngo-${m.match_id}`} onClick={() => { setRatingFor(m); setRatingValue(5); }} className="btn-primary px-3 py-1.5 text-xs inline-flex items-center justify-center gap-1">
+                    <Star size={12} /> RATE NGO
+                  </button>
+                )}
+                {m.status === "completed" && m.volunteer_rating && (
+                  <div className="label-mono text-[#FFC000] flex items-center gap-0.5 justify-center">
+                    {"★".repeat(m.volunteer_rating)}{"☆".repeat(5 - m.volunteer_rating)}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         ))}
         {matches.length === 0 && <div className="text-center py-10 text-[#5C5C5C] border border-dashed border-[#E5E5E5]">No matches yet. Browse tasks to apply, or wait for an admin to run matching.</div>}
       </div>
+
+      {ratingFor && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setRatingFor(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white border border-[#111] p-6 w-full max-w-md shadow-[6px_6px_0_0_#111]">
+            <div className="label-mono mb-2">Rate the NGO</div>
+            <h3 className="font-heading font-bold text-xl mb-4">{ratingFor.task_title}</h3>
+            <div className="flex gap-2 mb-5">
+              {[1,2,3,4,5].map((v) => (
+                <button key={v} onClick={() => setRatingValue(v)}
+                  className={`w-12 h-12 flex items-center justify-center text-2xl border ${ratingValue >= v ? "bg-[#FFC000] border-[#FFC000]" : "border-[#E5E5E5] text-[#E5E5E5]"}`}>
+                  ★
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button data-testid="vol-rating-submit" onClick={submitRating} className="btn-primary px-4 py-2 text-sm flex-1">SUBMIT</button>
+              <button onClick={() => setRatingFor(null)} className="btn-outline-black px-4 py-2 text-sm">CANCEL</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -356,6 +402,149 @@ function Rewards() {
           </div>
         </div>
       </div>
+
+      <ShareImpactCard user={user} />
+    </div>
+  );
+}
+
+function VolunteerProfile() {
+  const { user, refresh } = useAuth();
+  const [form, setForm] = useState(null);
+  const [newSkill, setNewSkill] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setForm({
+        name: user.name || "",
+        phone: user.phone || "",
+        skills: user.skills || [],
+        languages: user.languages || [],
+        experience: user.experience || "",
+        location_lat: user.location_lat || 10.8505,
+        location_lng: user.location_lng || 76.2711,
+        location_name: user.location_name || "Kerala",
+        availability_dates: user.availability_dates || [],
+        availability_slots: user.availability_slots || [],
+      });
+    }
+  }, [user]);
+
+  const LANGS = ["Malayalam", "English", "Hindi", "Tamil", "Kannada", "Telugu"];
+  const SLOTS = ["morning", "afternoon", "evening"];
+
+  const toggle = (k, v) =>
+    setForm((f) => ({ ...f, [k]: f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v] }));
+
+  const addSkill = () => {
+    const s = newSkill.trim().toLowerCase();
+    if (s && !form.skills.includes(s)) setForm({ ...form, skills: [...form.skills, s] });
+    setNewSkill("");
+  };
+
+  const addDates = () => {
+    const dates = [];
+    for (let i = 0; i < 20; i += 2) {
+      const d = new Date(); d.setDate(d.getDate() + i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    setForm({ ...form, availability_dates: dates });
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put("/users/me", form);
+      toast.success("Profile updated");
+      await refresh();
+    } catch { toast.error("Save failed"); }
+    setSaving(false);
+  };
+
+  if (!form) return <div className="label-mono">Loading...</div>;
+
+  return (
+    <div className="max-w-3xl">
+      <div className="label-mono mb-2">Profile</div>
+      <h1 className="font-heading font-black text-4xl tracking-tighter mb-6">Keep your profile sharp.</h1>
+
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="border border-[#E5E5E5] bg-white p-4">
+          <div className="label-mono mb-1">Points</div>
+          <div className="font-heading font-black text-2xl">{user?.total_points || 0}</div>
+        </div>
+        <div className="border border-[#E5E5E5] bg-white p-4">
+          <div className="label-mono mb-1">Badges</div>
+          <div className="font-heading font-black text-2xl">{(user?.badges || []).length}</div>
+        </div>
+        <div className="border border-[#E5E5E5] bg-white p-4">
+          <div className="label-mono mb-1">Verified</div>
+          <div className="font-heading font-black text-2xl">{user?.verified ? "YES" : "NO"}</div>
+        </div>
+      </div>
+
+      <div className="border border-[#E5E5E5] bg-white p-6 space-y-4">
+        <Field label="Full name">
+          <input className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        </Field>
+        <Field label="Phone">
+          <input className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        </Field>
+        <Field label="Skills">
+          <div className="flex flex-wrap gap-2 mb-2">
+            {form.skills.map((s) => (
+              <span key={s} className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-[#111] bg-[#111] text-white">
+                {s}<button onClick={() => setForm({ ...form, skills: form.skills.filter((x) => x !== s) })} className="ml-1">×</button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input data-testid="profile-skill-input" className="border border-[#E5E5E5] px-3 py-2 flex-1" placeholder="Add skill" value={newSkill} onChange={(e) => setNewSkill(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSkill(); } }} />
+            <button className="btn-outline-black px-3 text-sm" onClick={addSkill}>ADD</button>
+          </div>
+        </Field>
+        <Field label="Languages">
+          <div className="flex flex-wrap gap-2">
+            {LANGS.map((l) => (
+              <button key={l} onClick={() => toggle("languages", l)} className={`text-xs px-3 py-1.5 border font-mono uppercase ${form.languages.includes(l) ? "bg-[#002FA7] text-white border-[#002FA7]" : "border-[#E5E5E5]"}`}>{l}</button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Time slots">
+          <div className="flex gap-2">
+            {SLOTS.map((s) => (
+              <button key={s} onClick={() => toggle("availability_slots", s)} className={`flex-1 px-3 py-2 border font-mono uppercase text-xs ${form.availability_slots.includes(s) ? "bg-[#111] text-white border-[#111]" : "border-[#E5E5E5]"}`}>{s}</button>
+            ))}
+          </div>
+          <div className="mt-3">
+            <button onClick={addDates} className="btn-outline-black px-3 py-1.5 text-xs">ADD NEXT 20 DAYS</button>
+            <span className="ml-3 label-mono">{form.availability_dates.length} dates</span>
+          </div>
+        </Field>
+        <Field label="Experience">
+          <textarea rows={3} className="border border-[#E5E5E5] px-3 py-2 w-full" value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} />
+        </Field>
+        <Field label="Location">
+          <input className="border border-[#E5E5E5] px-3 py-2 w-full mb-2" value={form.location_name} onChange={(e) => setForm({ ...form, location_name: e.target.value })} />
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" step="0.001" className="border border-[#E5E5E5] px-3 py-2 font-mono text-sm" value={form.location_lat} onChange={(e) => setForm({ ...form, location_lat: parseFloat(e.target.value) })} />
+            <input type="number" step="0.001" className="border border-[#E5E5E5] px-3 py-2 font-mono text-sm" value={form.location_lng} onChange={(e) => setForm({ ...form, location_lng: parseFloat(e.target.value) })} />
+          </div>
+        </Field>
+        <button data-testid="vol-profile-save" onClick={save} disabled={saving} className="btn-primary w-full py-3 font-medium">
+          {saving ? "SAVING..." : "SAVE PROFILE"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <div className="label-mono mb-2">{label}</div>
+      {children}
     </div>
   );
 }

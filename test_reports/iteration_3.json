@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 3 end-to-end testing COMPLETE. Backend: 56/56 tests passing — 39 regression (test_sra_api.py + test_sra_new_features.py from prev iterations) + 17 new iteration-3 tests (test_iteration3_features.py) covering Google Forms pipeline (ingest secret auth, admin list/filter/publish/discard), admin redemptions (list/filter/fulfill with volunteer notification), task applicants (apply + owner-only list + 403 for non-owner), two-way ratings (ngo_rating 5-star = +50 pts bonus; volunteer_rating), per-category skill_champion badge (5 completed in same category), speed_volunteer badge (<=1h accept), multilingual badge (translations>1), PUT /users/me and PUT /ngos/me with role enforcement. Frontend: /admin/pipeline renders 4 intake cards with urgency/category badges; /admin/redemptions renders with Pending/Fulfilled/All filters; /ngo/profile and /volunteer/profile load with pre-filled editable forms; /volunteer/rewards shows catalog + leaderboard + ShareImpactCard (canvas present).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/rewards/redeem", "issue": "Returned 500 because inserted redemption dict still carried MongoDB _id ObjectId which broke jsonable_encoder. Fixed during testing: now pops _id before returning."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/pipeline", "issues": ["Right pane shows instructional text 'Select a submission...' only — no empty-state illustration. Minor, acceptable for demo."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3_features.py",
+    "/app/backend/tests/test_sra_api.py",
+    "/app/backend/tests/test_sra_new_features.py",
+    "/app/test_reports/pytest/iteration3.xml",
+    "/app/test_reports/pytest/regression_it3.xml"
+  ],
+  "action_items": [
+    "None blocking. Consider splitting server.py (still 1727 lines) into routers in a future iteration.",
+    "Consider adding rate-limiting / IP allowlist on /api/pipeline/ingest — right now only a shared secret guards it.",
+    "Consider adding response_model Pydantic shapes on new endpoints (pipeline, redemptions) for OpenAPI clarity."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew from 1354 → 1727 lines. Hard 700-line guideline now ~2.5x exceeded. Priority refactor target: pipeline.py, admin.py, rewards.py router split.",
+    "redeem() inserted a dict into Mongo and returned same dict — classic ObjectId leak. Fixed with .pop('_id'). Audit every insert_one+return pattern (task create, pipeline ingest, notifications) for same issue using `db.X.insert_one(d); return d`.",
+    "/pipeline/ingest accepts arbitrary plaintext via a single shared secret from env with default 'demo-pipeline-secret'. Before production, rotate secret + add HMAC signature of body.",
+    "simple_geocode falls back to Kerala centroid (10.8505,76.2711) silently — two unrelated submissions from 'unknown' locations collide on heatmap. Log / flag 'geocode_confidence: low'.",
+    "gemini_extract_skills + gemini_translate are awaited inline with 30s timeout → POST /pipeline/ingest can block webhook retries from Google Apps Script. Move to background task.",
+    "rate_match has no authorization check that the user is actually party to the match — any volunteer token can PUT rating on any match_id."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (redeem() _id pop)",
+    "/app/backend/tests/test_iteration3_features.py (new)"
+  ],
+  "success_rate": {"backend": "100% (56/56)", "frontend": "100% for the 5 new pages verified (admin pipeline, admin redemptions, NGO profile, volunteer profile, rewards with ShareImpactCard)"},
+  "test_credentials": "ADMIN_TOKEN=test_admin_1776963931551 VOL_TOKEN=test_vol_1776963931563 NGO_TOKEN=test_ngo_1776963931565 (regenerated via mongosh from /app/auth_testing.md).",
+  "seed_data_creation": "Created 4 TEST_P* pipeline submissions via /api/pipeline/ingest (2 healthcare, 1 education, 1 already-discarded). Created ~10 TEST_ tasks for applicant/rate/badge coverage. Granted user_vol_test 5000 points temporarily for redemption test, redeemed 'Certificate of Impact (Printed)' and marked fulfilled.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Three pytest files now: test_sra_api.py (27), test_sra_new_features.py (12), test_iteration3_features.py (17) → 56 total. All self-bootstrap tokens via mongosh on the machine. PIPELINE_SECRET defaults to 'demo-pipeline-secret'. Backend has a fixed ObjectId leak in redeem() — pattern is worth a grep for insert_one+return. Gemini calls in ingest/task-create can take 10-30s; tests allow up to 45s. Rate endpoint has no party-check (see code review)."
+  ,"rca of the issue": "POST /api/rewards/redeem returned HTTP 500 with 'ObjectId object is not iterable'. Root cause: after `db.rewards.insert_one(redemption)` the pymongo driver mutates the input dict to add the generated `_id` (ObjectId). Code then returned the same dict; FastAPI's jsonable_encoder cannot serialize ObjectId → ValueError. Fix: call `redemption.pop('_id', None)` before returning. Mitigation: audit every `db.X.insert_one(d); return d` site for the same leak."
+}
