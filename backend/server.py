@@ -1251,9 +1251,20 @@ async def mark_all_read(request: Request):
 
 # ================== PUBLIC IMPACT ==================
 
+_impact_cache = {"data": None, "ts": 0}
+_IMPACT_TTL = 45  # seconds
+
+import time as _time
+
+
 @api.get("/impact/public")
 async def public_impact():
-    """Public (unauthenticated) impact dashboard stats + recent completed tasks."""
+    """Public (unauthenticated) impact dashboard stats + recent completed tasks.
+    Cached for 45s to protect the unauth endpoint. Lat/lng rounded to ~1km for privacy."""
+    now = _time.time()
+    if _impact_cache["data"] and (now - _impact_cache["ts"] < _IMPACT_TTL):
+        return _impact_cache["data"]
+
     ngos_total = await db.ngos.count_documents({"verified": True})
     volunteers = await db.users.count_documents({"role": "volunteer"})
     tasks_total = await db.tasks.count_documents({})
@@ -1266,32 +1277,40 @@ async def public_impact():
     ]).to_list(1)
     total_points = total_points_agg[0]["total"] if total_points_agg else 0
 
-    # Top 5 volunteers
     leaders = await db.users.find(
         {"role": "volunteer"},
         {"_id": 0, "name": 1, "total_points": 1, "badges": 1, "location_name": 1}
     ).sort("total_points", -1).limit(5).to_list(5)
 
-    # Recent completed tasks (hide PII)
     recent_completed = await db.tasks.find(
         {"status": "completed"},
         {"_id": 0, "title": 1, "category": 1, "urgency": 1, "location_name": 1, "ngo_name": 1, "volunteers_required": 1, "volunteers_matched": 1}
     ).sort("created_at", -1).limit(8).to_list(8)
 
-    # Heatmap points from open/active tasks only
-    heat = await db.tasks.find(
+    heat_raw = await db.tasks.find(
         {"status": {"$in": ["open", "matching", "active"]}},
         {"_id": 0, "location_lat": 1, "location_lng": 1, "urgency": 1, "category": 1, "title": 1, "location_name": 1}
     ).limit(200).to_list(200)
+    # Round lat/lng to 2 decimal places (~1km grid) for privacy on public endpoint
+    heat = [
+        {
+            "location_lat": round(h.get("location_lat", 0), 2) if h.get("location_lat") else None,
+            "location_lng": round(h.get("location_lng", 0), 2) if h.get("location_lng") else None,
+            "urgency": h.get("urgency"),
+            "category": h.get("category"),
+            "title": h.get("title"),
+            "location_name": h.get("location_name"),
+        }
+        for h in heat_raw
+    ]
 
-    # category distribution
     categories_cursor = db.tasks.aggregate([
         {"$group": {"_id": "$category", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
     ])
     categories = [{"category": c["_id"], "count": c["count"]} async for c in categories_cursor]
 
-    return {
+    payload = {
         "stats": {
             "ngos": ngos_total,
             "volunteers": volunteers,
@@ -1307,6 +1326,9 @@ async def public_impact():
         "heatmap": heat,
         "categories": categories,
     }
+    _impact_cache["data"] = payload
+    _impact_cache["ts"] = now
+    return payload
 
 
 # ================== HEALTH ==================

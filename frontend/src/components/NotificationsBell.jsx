@@ -18,9 +18,16 @@ export default function NotificationsBell() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 20000);
-    return () => clearInterval(id);
-  }, [load]);
+    let id;
+    const tick = () => {
+      load();
+      // Slower polling when no unread; faster after new unread seen
+      const delay = data.unread > 0 ? 15000 : 45000;
+      id = setTimeout(tick, delay);
+    };
+    id = setTimeout(tick, 30000);
+    return () => clearTimeout(id);
+  }, [load, data.unread]);
 
   useEffect(() => {
     const onClick = (e) => {

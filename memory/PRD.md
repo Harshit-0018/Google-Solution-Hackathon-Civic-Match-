@@ -3,72 +3,69 @@
 **Tag-line:** AI-powered volunteer matching for urgent community needs.
 **Hackathon:** Google Solution Challenge 2026
 **Stack:** React (CRA + Tailwind + shadcn) · FastAPI · MongoDB
-**Google integrations:** Emergent-managed Google OAuth · Gemini 2.5 Flash (translations) · Leaflet+CartoDB (Google Maps drop-in when key provided)
+**Google integrations:** Emergent-managed Google OAuth · Gemini 2.5 Flash (translation + semantic skill expansion) · Google Maps JS optional (Leaflet+CartoDB fallback)
 
 ## Original problem statement (verbatim)
 > i have to make this website do all same as given in the md file and make all the things necessary and required, make it good looking and working prototype model of it, as i want to use it for google solution hackathon. All frontend backend and end to end with database. use google product as much as possible.
 
-Reference: `/ARCHITECTURE.md` (Smart Resource Allocation — Full Architecture Document)
+Reference: `/ARCHITECTURE.md`
 
 ## User personas
-1. **NGO** — posts community-need tasks, sets urgency 1-5, views coverage map.
+1. **NGO** — posts community-need tasks with urgency 1-5.
 2. **Volunteer** — skill-tagged profile, accepts matches, earns points & badges.
-3. **Admin** — verifies NGOs/volunteers, runs AI matching, audits everything, seeds demo data.
+3. **Admin** — verifies, runs matching, audits, seeds demo data.
+4. **Public visitor** — browses aggregate impact at `/impact` (no login).
 
-## Core requirements
-- Three-portal routing (`/ngo/*`, `/volunteer/*`, `/admin/*`).
-- Google Sign-In + role onboarding.
-- NGO: post tasks (title, description, urgency, required skills, location, dates, volunteers needed).
-- AI matching engine with **4 signals** (skill 0.40 + proximity 0.30 + availability 0.20 + impact 0.10) with transparent per-signal scores.
-- Heatmap (urgency-weighted) visible to all portals.
-- Multilingual task descriptions (Gemini → en/hi/ta/ml/kn/te).
-- Rewards: points per urgency, badges, leaderboard, redeemable catalog.
-- Audit log on every admin/NGO mutation.
-- Demo seed with Kerala context (3 NGOs · 15 volunteers · 10 tasks · 6 catalog items).
+## What's implemented
 
-## What's implemented (2026-02)
-- ✅ Full FastAPI backend: auth, users, ngos, tasks, matches, rewards, admin, audit (600+ LOC `server.py`).
-- ✅ Matching algorithm with Haversine distance + Jaccard/coverage skill similarity + availability overlap + impact from completed tasks.
-- ✅ Gemini 2.5 Flash multilingual translation on task creation (6 languages).
-- ✅ Emergent Google OAuth end-to-end (session cookie + /auth/me + /auth/logout).
-- ✅ Role-based onboarding (volunteer | NGO) with rich profile forms.
-- ✅ Landing page (Swiss/Klein Blue aesthetic, 3 portal cards, integration grid, CTA).
-- ✅ NGO portal: Dashboard + heatmap, Post Task, My Tasks, Task Detail with ranked candidate cards and score breakdown.
-- ✅ Volunteer portal: Dashboard + heatmap, Browse Tasks with category/urgency/language filters, My Matches (accept/decline), Rewards (catalog + leaderboard + history).
-- ✅ Admin portal: Control Room dashboard, Manage NGOs, Manage Volunteers, Run Matching, Audit Log, Seed Demo button.
-- ✅ Leaflet+CartoDB heatmap with urgency color gradient (red → green).
-- ✅ Demo seed: 3 Kerala NGOs + 15 volunteers + 10 tasks + 6 catalog items (scoped to `@demo.sra` emails to prevent production wipes).
-- ✅ Full `data-testid` coverage on interactive elements.
-- ✅ 27/27 backend tests passing; 100% frontend portal load pass.
+### Iteration 1 (2026-04-23)
+- Full FastAPI backend (30+ endpoints): auth (Emergent Google OAuth), users, ngos, tasks, matches, rewards, admin, audit.
+- Matching algorithm: 4 transparent signals (skill 0.40 + proximity 0.30 + availability 0.20 + impact 0.10).
+- Gemini 2.5 Flash multilingual translation on task creation (6 languages).
+- Three React portals (NGO / Volunteer / Admin) with Swiss/Klein-Blue design.
+- Heatmap via Leaflet+CartoDB (urgency-weighted).
+- Demo seed: 3 Kerala NGOs · 15 volunteers · 10 tasks · 6 catalog items.
+- 27/27 backend tests pass; all portal UIs render.
+
+### Iteration 2 (2026-04-23) — "do all suggested changes"
+- **Gemini semantic skill expansion**: on task creation, Gemini generates 8-12 related/synonym skills. Stored in `task.semantic_skills` and used in the matching algorithm's skill similarity (boosts score up to +0.25 for volunteers matching semantic neighbors).
+- **In-app notifications**: new `notifications` collection, endpoints `/api/notifications`, `/api/notifications/{id}/read`, `/api/notifications/read-all`. Notifications auto-created on match-created, match-accepted, match-declined, task-completed. Frontend `NotificationsBell` component with unread badge, dropdown, and smart polling (15s when unread, 45s idle).
+- **Public Impact Dashboard** at `/impact`: no auth required. Live stats (NGOs, volunteers, tasks, matches, total points), heatmap, top-5 leaderboard, category distribution, recent completed tasks. 45s cache + 2-decimal lat/lng rounding for privacy/DoS protection.
+- **Google Maps optional swap**: `REACT_APP_GOOGLE_MAPS_API_KEY` env var; if set, uses Google Maps JS (with visualization heatmap layer + light/monochrome style), else Leaflet fallback. Same props contract, zero code changes for pages.
+- **NGO task-ownership enforcement**: NGO role can only run `/api/match/run/{task_id}` on tasks they own. Admin unrestricted.
+- Landing page now has a `PUBLIC IMPACT ↗` link for share-ability.
+- 39/39 backend tests pass (27 regression + 12 new-feature).
 
 ## Backlog
-### P1 (near-term)
-- Google Maps JS swap-in when user provides API key (current: Leaflet+CartoDB).
-- Swap Jaccard skill similarity with real Gemini embeddings + cosine similarity.
-- Split `server.py` into routers (`auth`, `tasks`, `matching`, `rewards`, `admin`).
-- Push notifications (FCM via Cloud Functions).
 
-### P2 (nice-to-have)
-- Google Forms → backend pipeline for paper-survey digitisation (`/api/pipeline/ingest` spec only).
+### P1
+- Split `server.py` into FastAPI routers (auth / tasks / matching / rewards / admin / notifications / impact).
+- Full Google Maps Places Picker on NGO Post-Task form (requires key).
+- Swap Gemini skill expansion → true Gemini embeddings when emergent proxy exposes embedding models.
+- Firebase Cloud Messaging (FCM) for push notifications outside the app.
+
+### P2
+- Google Forms → `/api/pipeline/ingest` for paper-survey digitisation.
 - Firebase Storage for profile photos & NGO docs.
-- Task ownership enforcement on `/api/match/run/{id}` for NGO role.
-- Real Google Translate API (currently Gemini does this).
+- Server-Sent Events instead of polling for notifications.
 - Rate limiting on matching endpoint.
-- Volunteer referral flow (+75 pts/referral).
-- Deployment: Cloud Run (backend) + Firebase Hosting (frontend).
+- Referral flow (+75 pts/referral).
+- Cloud Run + Firebase Hosting deployment configs.
 
 ## Key files
-- `/app/backend/server.py` — all APIs, matching algorithm, translation, seed
-- `/app/frontend/src/App.js` — router with ProtectedRoute
-- `/app/frontend/src/pages/Landing.jsx` — marketing landing
-- `/app/frontend/src/pages/{NGO,Volunteer,Admin}Portal.jsx` — three portals
-- `/app/frontend/src/components/HeatMap.jsx` — Leaflet heatmap
-- `/app/auth_testing.md` — testing agent auth bypass playbook
-- `/app/memory/test_credentials.md` — test identities
+- `/app/backend/server.py` — all APIs (~1,360 LOC; needs router split).
+- `/app/frontend/src/App.js` — router with ProtectedRoute + /impact public.
+- `/app/frontend/src/pages/{Landing,Login,AuthCallback,Onboarding,Impact}.jsx`
+- `/app/frontend/src/pages/{NGO,Volunteer,Admin}Portal.jsx`
+- `/app/frontend/src/components/HeatMap.jsx` → dispatcher → Leaflet or Google.
+- `/app/frontend/src/components/NotificationsBell.jsx` — bell with smart polling.
+- `/app/auth_testing.md` — testing-agent session bypass playbook.
+- `/app/backend/tests/test_sra_api.py` (27) + `/app/backend/tests/test_sra_new_features.py` (12).
 
 ## Demo walkthrough
-1. Open `/` → sign in with Google → (first user becomes admin).
-2. `/admin` → click **SEED DEMO DATA** → 3 NGOs/15 vols/10 tasks populate.
-3. `/admin/matching` → pick an urgent task → **RUN AI MATCHING** → see 4-signal scored candidates.
-4. `/volunteer/browse` → filter by urgency → switch language to Malayalam/Hindi → view translated tasks.
-5. `/ngo/post` → create a task → Gemini auto-translates to 5 Indian languages.
+1. `/impact` — no login, share-ready public dashboard.
+2. `/` → **SIGN IN** → (first user auto-admin).
+3. `/admin` → **SEED DEMO DATA** → 3 NGOs/15 vols/10 tasks.
+4. `/ngo/post` → create task → watch Gemini translate to 5 langs AND expand skills.
+5. `/admin/matching` → pick a task → **RUN AI MATCHING** → see 4-bar score + semantic skill match.
+6. `/volunteer/matches` → accept → NGO admin gets a notification bell ping.
