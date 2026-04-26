@@ -4,7 +4,7 @@
 
 CivicMatch is an AI-powered platform that helps NGOs and local social groups identify the most urgent community problems and automatically match the right volunteers to solve them. It bridges the gap between handwritten community data and real-world action — from paper survey to deployed volunteer, in one platform.
 
-Live prototype: https://login-onboard-issue.preview.emergentagent.com/
+Live prototype:https://tinyurl.com/tthc9xz9
 
 ---
 
