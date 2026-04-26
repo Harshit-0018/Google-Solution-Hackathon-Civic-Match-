@@ -1,225 +1,158 @@
-# CivicMatch — Smart Resource Allocation for NGOs
+# Smart-Resource-Allocation
+=======
+# 🎯 Smart Resource Allocation
 
-**Google Solution Challenge 2026 | Team TechieDinosaurs**
+> **Google Solution Challenge Hackathon**
+> A three-portal web platform that digitises community needs, visualises urgency on a heatmap, and uses Vertex AI to match volunteers to tasks.
 
-CivicMatch is an AI-powered platform that helps NGOs and local social groups identify the most urgent community problems and automatically match the right volunteers to solve them. It bridges the gap between handwritten community data and real-world action — from paper survey to deployed volunteer, in one platform.
-
-Live prototype:https://tinyurl.com/tthc9xz9
-
----
-
-## The Problem
-
-NGOs working at the grassroots level face two compounding problems. First, community needs are collected through paper surveys that are never digitised, making it impossible to prioritise at scale. Second, even when problems are known, matching volunteers to tasks is done manually — by phone calls, WhatsApp groups, and gut feel. The result is slow response times, mismatched deployments, and burnt-out coordinators.
-
-Existing platforms like VolunteerMatch and JustServe only list opportunities for volunteers to self-select. They do not digitise surveys, rank problems by urgency, or assign volunteers intelligently.
-
----
-
-## The Solution
-
-CivicMatch provides a complete end-to-end workflow in three steps:
-
-**Digitise.** NGO staff photograph or upload handwritten community survey forms. Gemini Vision OCR extracts structured problem data automatically — no manual entry required.
-
-**Rank.** Google Gemini analyses all survey inputs, clusters related issues, and generates an urgency-ranked problem list scored 1 to 5 based on severity, frequency, and community impact.
-
-**Match.** The platform scores every registered volunteer across four dimensions — Skill fit, Proximity, Availability, and Past impact — and surfaces a ranked candidate list for each open task. Admins confirm and dispatch with one click.
-
----
-
-## Three Role-Based Portals
-
-The platform is built around three distinct user types, each with a dedicated workspace.
-
-**Admin Portal**
-The platform operator has full oversight. Admins can view all NGOs and volunteers registered on the system, trigger the Gemini-powered matching engine for any open task, review the ranked candidate list with transparent scoring, and access a timestamped audit log of every action taken.
-
-**NGO Portal**
-Verified NGOs can post community problems with category tags, urgency context, required skills, and location. They can track the status of every posted task — open, active, or completed — and see which volunteer has been matched to each task.
-
-**Volunteer Portal**
-Volunteers register with their skills, languages spoken, base location (city or GPS coordinates), and availability by date and time slot. Once onboarded, they are automatically considered for matching to urgent tasks in their area. They receive notifications when matched and can confirm or decline tasks from their dashboard.
-
----
-
-## Architecture
-
-```
-Frontend        React.js + Tailwind CSS
-                Three role-based portals — Admin, NGO, Volunteer
-                Hosted on Google Cloud Run
-
-Backend         Node.js (Express) / Python FastAPI
-                REST API for business logic, matching engine, user management
-                Hosted on Google Cloud Run
-
-AI Layer        Google Gemini API
-                Gemini Vision  — OCR and data extraction from survey images
-                Gemini 1.5 Pro — NLP urgency ranking, problem clustering, matching intelligence
-
-Database        Google Firestore (NoSQL, real-time)
-                Stores users, problems, volunteers, match records
-
-Storage         Google Cloud Storage
-                Survey image uploads and processed documents
-
-Auth            Firebase Authentication
-                OAuth 2.0 with role-based access control (Admin / NGO / Volunteer)
-
-Notifications   Firebase Cloud Messaging + SendGrid
-                Push and email alerts to matched volunteers
-
-Maps            Google Maps API
-                Volunteer proximity scoring and location display
-
-Deployment      Google Cloud Run — containerised, serverless, auto-scaling
-                Google Cloud Build — CI/CD pipeline
-```
-
----
-
-## Tech Stack
+## 🏗️ Architecture
 
 | Layer | Technology |
-|---|---|
-| Frontend | React.js, Tailwind CSS |
-| Backend | Node.js (Express), Python FastAPI |
-| AI / ML | Google Gemini API (Gemini 1.5 Pro + Vision) |
-| Database | Google Firestore |
-| Storage | Google Cloud Storage |
-| Auth | Firebase Authentication |
-| Hosting | Google Cloud Run, Google Cloud Build |
-| Notifications | Firebase Cloud Messaging, SendGrid, Twilio |
-| Maps | Google Maps API |
-| Dev Tools | GitHub, VS Code, Postman |
+|-------|-----------|
+| **Frontend** | React 18 + Vite + TailwindCSS |
+| **Backend** | Java 21 + Spring Boot 3 (Cloud Run) |
+| **Database** | Cloud Firestore |
+| **AI/ML** | Vertex AI text-embedding-004 |
+| **Auth** | Firebase Auth (Google Sign-In) |
+| **Notifications** | Firebase Cloud Messaging |
+| **Maps** | Google Maps JS API + Distance Matrix + Geocoding |
+| **CI/CD** | GitHub Actions → Firebase Hosting + Cloud Run |
 
----
+## 📁 Project Structure
 
-## Key Features
+```
+smart-resource-allocation/
+├── frontend/          # React + Vite + TailwindCSS
+│   └── src/
+│       ├── portals/   # ngo/ · volunteer/ · admin/
+│       ├── components/ # Shared UI (TaskCard, HeatMap, etc.)
+│       ├── hooks/     # useAuth, useTasks, useMatches
+│       └── services/  # firebase.js, api.js, maps.js
+├── backend/           # Java Spring Boot REST API
+│   └── src/main/java/com/sra/
+│       ├── config/    # Firebase, Security, VertexAI
+│       ├── controller/ # REST endpoints
+│       ├── service/   # Business logic
+│       ├── model/     # Data models
+│       └── middleware/ # Firebase JWT filter
+├── functions/         # Cloud Functions (Node.js)
+├── firestore.rules    # Firestore security rules
+├── firestore.indexes.json
+└── .github/workflows/ # CI/CD pipelines
+```
 
-- Paper survey digitisation via Gemini Vision OCR — no manual data entry
-- AI urgency ranking of community problems with a 1-5 severity score
-- Volunteer onboarding with skills, languages, location, and availability time slots
-- Gemini-powered auto-matching scoring volunteers on Skill, Proximity, Availability, and Impact
-- Three fully separate role-based dashboards with tailored workflows
-- Audit log for every admin action — transparent and accountable
-- Automated notifications to matched volunteers via email and push
-- Impact reports showing problems resolved, volunteer hours, and community coverage
-
----
-
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
-- Python 3.10+
-- Firebase project with Firestore and Authentication enabled
-- Google Cloud project with Gemini API, Cloud Run, Cloud Storage, and Maps API enabled
+- **Node.js** 18+
+- **Java** 21+
+- **Maven** 3.9+
+- **Firebase CLI**: `npm install -g firebase-tools`
+- **Google Cloud SDK**: [Install Guide](https://cloud.google.com/sdk/docs/install)
 
-### Environment Variables
+### 1. Clone & Install
 
-Create a `.env` file in the root of both the frontend and backend directories. Required variables:
+```bash
+git clone https://github.com/YOUR_USERNAME/smart-resource-allocation.git
+cd smart-resource-allocation
 
-```
-# Firebase
-FIREBASE_API_KEY=
-FIREBASE_AUTH_DOMAIN=
-FIREBASE_PROJECT_ID=
-FIREBASE_STORAGE_BUCKET=
-FIREBASE_MESSAGING_SENDER_ID=
-FIREBASE_APP_ID=
-
-# Google Cloud
-GOOGLE_CLOUD_PROJECT=
-GEMINI_API_KEY=
-GOOGLE_MAPS_API_KEY=
-
-# SendGrid
-SENDGRID_API_KEY=
+# Frontend
+cd frontend
+cp .env.example .env    # Fill in your Firebase config
+npm install
 
 # Backend
-PORT=8000
-```
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/Harshit-0018/Google-Solution-Hackathon-Civic-Match-.git
-cd Google-Solution-Hackathon-Civic-Match-
-
-# Install frontend dependencies
-cd frontend
-npm install
-npm run dev
-
-# Install backend dependencies
 cd ../backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+# Place your serviceAccountKey.json in src/main/resources/
+mvn clean install -DskipTests
+
+# Cloud Functions
+cd ../functions
+npm install
 ```
 
-### Running with Docker
+### 2. Configure Environment
+
+**Frontend** — edit `frontend/.env`:
+```env
+VITE_FIREBASE_API_KEY=your-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
+VITE_FIREBASE_APP_ID=1:123456789:web:abc123
+VITE_MAPS_API_KEY=your-maps-api-key
+VITE_API_BASE_URL=http://localhost:8080
+```
+
+**Backend** — set environment variables or edit `application.yml`:
+```bash
+export FIREBASE_PROJECT_ID=your-project-id
+export GCP_PROJECT_ID=your-gcp-project-id
+export MAPS_API_KEY=your-maps-key
+export TRANSLATE_API_KEY=your-translate-key
+export PIPELINE_SECRET=your-secret
+```
+
+### 3. Firebase Setup
 
 ```bash
-docker-compose up --build
+firebase login
+firebase init  # Select: Firestore, Hosting, Functions, Storage
+firebase deploy --only firestore:rules
+firebase deploy --only firestore:indexes
 ```
 
----
+### 4. Enable GCP APIs
 
-## Project Structure
-
-```
-civicmatch/
-├── frontend/               # React.js application
-│   ├── src/
-│   │   ├── pages/          # Admin, NGO, Volunteer portal pages
-│   │   ├── components/     # Shared UI components
-│   │   └── lib/            # Firebase config, API clients
-│   └── public/
-├── backend/                # FastAPI / Node.js API
-│   ├── routes/             # API route handlers
-│   ├── services/           # Gemini AI, matching engine, notifications
-│   └── models/             # Data models and schemas
-└── docs/                   # Architecture diagrams, API documentation
+```bash
+gcloud services enable \
+  aiplatform.googleapis.com \
+  maps-backend.googleapis.com \
+  distance-matrix-backend.googleapis.com \
+  geocoding-backend.googleapis.com \
+  translate.googleapis.com \
+  run.googleapis.com \
+  cloudfunctions.googleapis.com \
+  pubsub.googleapis.com \
+  logging.googleapis.com
 ```
 
----
+### 5. Run Locally
 
-## How the Matching Engine Works
+```bash
+# Terminal 1 — Frontend
+cd frontend && npm run dev
 
-When an admin runs matching for an open task, the system queries all registered volunteers and scores each one across four dimensions:
+# Terminal 2 — Backend
+cd backend && mvn spring-boot:run
 
-- **Skill fit** — overlap between volunteer skills and task requirements, expanded using Gemini's semantic understanding (e.g. "teaching" matches "education workshop")
-- **Proximity** — haversine distance between volunteer base location and task location, normalised to a 0-100 score with a 50 km soft cap
-- **Availability** — whether the volunteer has indicated availability on dates and time slots overlapping with the task window
-- **Past impact** — a reputation score derived from completed tasks, confirmation rate, and volunteer feedback
+# Terminal 3 — Functions emulator (optional)
+cd functions && npm run serve
+```
 
-Gemini ranks the resulting scored list and returns it to the admin with a breakdown of each dimension per candidate. The admin selects the best match and confirms — the volunteer is notified immediately.
+## 🎭 Three Portals
 
----
+| Portal | Route | Role |
+|--------|-------|------|
+| **NGO** | `/ngo/*` | Post tasks, set urgency, view matches |
+| **Volunteer** | `/volunteer/*` | Profile setup, browse tasks, accept matches, earn rewards |
+| **Admin** | `/admin/*` | Approve NGOs/volunteers, trigger AI matching, audit logs |
 
-## Team
+## 🤖 AI Matching Algorithm
 
-**TechieDinosaurs — Google Solution Challenge 2026**
+```
+finalScore = 0.40 × skillScore
+           + 0.30 × proximityScore
+           + 0.20 × availabilityScore
+           + 0.10 × impactScore
+```
 
-| Name | Role |
-|---|---|
-| Harshit Singh | Team Leader, Backend & AI integration |
-| Vanshdeep Singh | Frontend & Platform architecture |
+- **Skill**: Cosine similarity of Vertex AI 768-dim embeddings
+- **Proximity**: `1 / (1 + distKm / 10)` via Google Maps Distance Matrix
+- **Availability**: Date overlap × time slot fraction
+- **Impact**: `min(1.0, completedTasks × avgRating / 25)`
 
----
 
-## Links
 
-- Live Prototype: https://login-onboard-issue.preview.emergentagent.com/
-- Demo Video: [To be added]
-- Google Solution Challenge: https://developers.google.com/community/gdsc-solution-challenge
-
----
-
-## License
-
-This project was built for the Google Solution Challenge 2026. All rights reserved by Team TechieDinosaurs.
