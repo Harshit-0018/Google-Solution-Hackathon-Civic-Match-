@@ -78,7 +78,7 @@ Deployment      Google Cloud Run — containerised, serverless, auto-scaling
 
 ---
 
-##Visualisation and Working Prototype
+## Visualisation and Working Prototype
 
 Dashboard <img width="916" height="897" alt="image" src="https://github.com/user-attachments/assets/74315fed-135d-47c6-8db2-44fd55232d8f" />
 
