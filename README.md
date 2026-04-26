@@ -80,19 +80,26 @@ Deployment      Google Cloud Run — containerised, serverless, auto-scaling
 
 ## Visualisation and Working Prototype
 
-Dashboard <img width="916" height="897" alt="image" src="https://github.com/user-attachments/assets/74315fed-135d-47c6-8db2-44fd55232d8f" />
+**Dashboard** <img width="916" height="897" alt="image" src="https://github.com/user-attachments/assets/74315fed-135d-47c6-8db2-44fd55232d8f" />
+
 
 Dashboard <img width="904" height="905" alt="image" src="https://github.com/user-attachments/assets/b26adccf-52eb-4af0-b731-6891096f1e71" />
 
+
 Create your account (Volunteer/NGO) <img width="662" height="715" alt="image" src="https://github.com/user-attachments/assets/7921d013-67ac-4e62-b671-696a9a2f7246" />
+
 
 NGO <img width="767" height="722" alt="image" src="https://github.com/user-attachments/assets/4e075d06-18da-4542-86db-e408736e869e" />
 
+
 Volunteer <img width="595" height="900" alt="image" src="https://github.com/user-attachments/assets/98461c81-bb4b-4c21-b15b-2ccaf98bd85a" />
+
 
 Admin  <img width="1913" height="902" alt="image" src="https://github.com/user-attachments/assets/e1853d13-ba17-406c-895d-bfea4dfab17c" />
 
+
 Admin Matching (Volunteer & NGO)  <img width="1917" height="946" alt="image" src="https://github.com/user-attachments/assets/23183206-f0fb-4d1e-a066-43f4b4fefa7d" />
+
 
 AuditLog  <img width="1919" height="942" alt="image" src="https://github.com/user-attachments/assets/371347f4-982a-4b06-80f9-36d8bad7e79f" />
 
