@@ -76,6 +76,10 @@ Deployment      Google Cloud Run — containerised, serverless, auto-scaling
                 Google Cloud Build — CI/CD pipeline
 ```
 
+## Workflow(Architecture)
+
+<img width="1360" height="1640" alt="CivicMatch_Architecture" src="https://github.com/user-attachments/assets/491cd11a-55cd-45aa-b09a-ee0e375ce2ba" />
+
 ---
 
 ## Visualisation and Working Prototype
