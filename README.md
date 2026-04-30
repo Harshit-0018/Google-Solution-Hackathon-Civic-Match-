@@ -139,6 +139,21 @@ Deployment      Google Cloud Run — containerised, serverless, auto-scaling
 
 ---
 
+---
+
+##  Impact Vision
+
+CivicMatch aims to transform how grassroots social work operates by:
+
+- Reducing response time from **days → minutes**
+- Increasing volunteer-task match accuracy
+- Enabling data-driven decision-making for NGOs
+- Empowering underserved communities through faster intervention
+
+Our long-term vision is to become the **default operating system for NGOs worldwide**.
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -218,7 +233,7 @@ civicmatch/
 
 ---
 
-## 🚀 Future Improvements
+##  Future Improvements
 
 We envision CivicMatch evolving into a fully autonomous social impact engine. Planned enhancements include:
 
