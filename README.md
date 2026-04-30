@@ -1,3 +1,10 @@
+![Status](https://img.shields.io/badge/status-active-success)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Built With](https://img.shields.io/badge/built%20with-Google%20Cloud-orange)
+![AI Powered](https://img.shields.io/badge/AI-Gemini-blueviolet)
+
+
+
 # CivicMatch — Smart Resource Allocation for NGOs
 
 **Google Solution Challenge 2026 | Team TechieDinosaurs**
