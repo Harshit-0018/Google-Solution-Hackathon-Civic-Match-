@@ -347,5 +347,5 @@ Please ensure your PRs are well-documented and follow clean coding practices.
 
 ## License
 
-This project was built for the Google Solution Challenge 2026. All rights reserved by Harshit.
-(You can fork and suggest some changes if you want).
+This project is open for collaboration and improvements. Feel free to fork and contribute.
+Harshit.
