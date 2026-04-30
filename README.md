@@ -244,4 +244,5 @@ Gemini ranks the resulting scored list and returns it to the admin with a breakd
 
 ## License
 
-This project was built for the Google Solution Challenge 2026. All rights reserved by Team TechieDinosaurs.
+This project was built for the Google Solution Challenge 2026. All rights reserved by Harshit.
+(You can fork and suggest some changes if you want).
