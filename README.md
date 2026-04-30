@@ -298,6 +298,29 @@ Gemini ranks the resulting scored list and returns it to the admin with a breakd
 
 ---
 
+---
+
+##  Contributing
+
+We welcome contributions from developers, designers, and social impact enthusiasts!
+
+### How to Contribute
+1. Fork the repository
+2. Create a new branch (`feature/your-feature-name`)
+3. Commit your changes
+4. Push and open a Pull Request
+
+### Areas You Can Contribute
+- UI/UX improvements
+- Matching algorithm optimization
+- Mobile app development
+- AI model enhancements
+- Documentation
+
+Please ensure your PRs are well-documented and follow clean coding practices.
+
+---
+
 ## License
 
 This project was built for the Google Solution Challenge 2026. All rights reserved by Harshit.
