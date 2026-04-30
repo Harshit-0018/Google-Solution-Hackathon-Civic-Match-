@@ -7,7 +7,10 @@
 
 # CivicMatch — Smart Resource Allocation for NGOs
 
-**Google Solution Challenge 2026 | Team TechieDinosaurs**
+**Google Solution Challenge 2026**
+<img width="830" height="831" alt="image" src="https://github.com/user-attachments/assets/b98953c2-92fd-4c3b-b8ee-6360db6fbdec" />
+
+
 
 CivicMatch is an AI-powered platform that helps NGOs and local social groups identify the most urgent community problems and automatically match the right volunteers to solve them. It bridges the gap between handwritten community data and real-world action — from paper survey to deployed volunteer, in one platform.
 
