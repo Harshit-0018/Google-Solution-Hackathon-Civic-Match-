@@ -42,6 +42,20 @@ Volunteers register with their skills, languages spoken, base location (city or 
 
 ---
 
+
+## 🏆 Why CivicMatch is Different
+
+Unlike existing platforms, CivicMatch:
+
+- Does not rely on volunteers to self-select tasks
+- Uses AI to **prioritise problems before solving them**
+- Automates **end-to-end workflow from survey → solution**
+- Brings **data intelligence into grassroots social work**
+
+This makes it not just a platform, but a **decision-making system for NGOs**.
+
+---
+
 ## Architecture
 
 ```
